@@ -1,0 +1,19 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# node
+node_modules/
+frontend/dist/
+# env & data
+.env
+media/
+backend/media/
+*.log
+# benchmark artefacts (models, audio)
+backend/benchmarks/data/
+backend/benchmarks/models/
+.playwright-mcp/
