@@ -1,0 +1,233 @@
+import { useCallback, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { errorMessage, type UploadProgress } from "@/api/client";
+import { lessonsApi } from "@/api/staff";
+import { useStudents, useTeachers } from "@/api/queries";
+import { useStaffAuth } from "@/auth/StaffAuth";
+import { PageHeader, ProgressBar } from "@/components/ui";
+import { datetimeLocalToIso, formatBytes, toDatetimeLocalValue } from "@/lib/format";
+
+const ACCEPT = ".mp4,.mkv,.mov,.webm,.m4a,.mp3,.wav,.ogg,.aac,video/*,audio/*";
+const ALLOWED_EXT = ["mp4", "mkv", "mov", "webm", "m4a", "mp3", "wav", "ogg", "aac"];
+
+function fileExtOk(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return ALLOWED_EXT.includes(ext);
+}
+
+export function UploadPage() {
+  const navigate = useNavigate();
+  const { user, isTeacher } = useStaffAuth();
+  const students = useStudents();
+  const teachers = useTeachers();
+
+  const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [studentId, setStudentId] = useState("");
+  const [teacherId, setTeacherId] = useState(isTeacher && user?.teacher_id ? user.teacher_id : "");
+  const [scheduledAt, setScheduledAt] = useState(() => toDatetimeLocalValue(new Date()));
+  const [hints, setHints] = useState<{ ru: boolean; kk: boolean }>({ ru: true, kk: true });
+  const [consent, setConsent] = useState(false);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const pickFile = useCallback((f: File | undefined | null) => {
+    if (!f) return;
+    if (!fileExtOk(f.name)) {
+      setError("Поддерживаются записи mp4, mkv, mov, webm и аудио m4a, mp3, wav, ogg, aac.");
+      return;
+    }
+    setError(null);
+    setFile(f);
+  }, []);
+
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    pickFile(e.dataTransfer.files?.[0]);
+  };
+
+  const languageHints = [hints.ru ? "ru" : null, hints.kk ? "kk" : null].filter((h): h is string => Boolean(h));
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file) {
+      setError("Выберите файл записи урока.");
+      return;
+    }
+    if (!studentId) {
+      setError("Выберите ученика.");
+      return;
+    }
+    if (!consent) {
+      setError("Подтвердите наличие согласия на обработку записи.");
+      return;
+    }
+    if (languageHints.length === 0) {
+      setError("Отметьте хотя бы один язык урока.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const lesson = await lessonsApi.upload(
+        {
+          file,
+          student_id: studentId,
+          teacher_id: teacherId || undefined,
+          scheduled_at: datetimeLocalToIso(scheduledAt) ?? undefined,
+          subject: "russian",
+          consent_confirmed: true,
+          language_hints: languageHints,
+        },
+        setProgress,
+        controller.signal,
+      );
+      navigate(`/lessons/${lesson.id}`, { replace: true });
+    } catch (err) {
+      setError(errorMessage(err, "Не удалось загрузить запись."));
+      setProgress(null);
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+    }
+  };
+
+  const noStudents = students.data && students.data.items.length === 0;
+
+  return (
+    <>
+      <PageHeader
+        title="Загрузить запись урока"
+        subtitle="Видео или аудио одного занятия. После загрузки запись обработается автоматически: расшифровка, кадры, анализ и отчёты."
+      />
+      <form className="form" onSubmit={submit}>
+        <div className="card">
+          <div
+            className={`dropzone${dragging ? " active" : ""}${file ? " has-file" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            onClick={() => inputRef.current?.click()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+            }}
+            aria-label="Выбрать файл записи"
+          >
+            <input ref={inputRef} type="file" accept={ACCEPT} onChange={(e) => pickFile(e.target.files?.[0])} />
+            {file ? (
+              <>
+                <strong>{file.name}</strong>
+                <p className="muted small mb-0">{formatBytes(file.size)} · нажмите, чтобы выбрать другой файл</p>
+              </>
+            ) : (
+              <>
+                <strong>Перетащите файл сюда или нажмите, чтобы выбрать</strong>
+                <p className="muted small mb-0">Запись Zoom / Google Meet: mp4, mkv, mov, webm, а также аудио m4a, mp3, wav</p>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>Данные урока</h3>
+          <div className="form-row">
+            <div className="field">
+              <label htmlFor="student">Ученик</label>
+              <select id="student" className="select" required value={studentId} onChange={(e) => setStudentId(e.target.value)}>
+                <option value="">— выберите ученика —</option>
+                {students.data?.items.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name}
+                    {s.grade ? ` · ${s.grade} класс` : ""}
+                  </option>
+                ))}
+              </select>
+              {noStudents && (
+                <span className="field-hint">
+                  Учеников пока нет — <Link to="/students">добавьте ученика</Link>.
+                </span>
+              )}
+            </div>
+            <div className="field">
+              <label htmlFor="teacher">Преподаватель</label>
+              <select id="teacher" className="select" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} disabled={isTeacher && Boolean(user?.teacher_id)}>
+                <option value="">— выберите преподавателя —</option>
+                {teachers.data?.items.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.full_name}
+                  </option>
+                ))}
+              </select>
+              {isTeacher && <span className="field-hint">Урок будет привязан к вам.</span>}
+            </div>
+            <div className="field">
+              <label htmlFor="scheduled_at">Дата и время урока</label>
+              <input id="scheduled_at" className="input" type="datetime-local" required value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Языки на уроке</span>
+              <div className="row" style={{ gap: 16 }}>
+                <label className="checkbox">
+                  <input type="checkbox" checked={hints.ru} onChange={(e) => setHints((h) => ({ ...h, ru: e.target.checked }))} />
+                  Русский
+                </label>
+                <label className="checkbox">
+                  <input type="checkbox" checked={hints.kk} onChange={(e) => setHints((h) => ({ ...h, kk: e.target.checked }))} />
+                  Казахский
+                </label>
+              </div>
+              <span className="field-hint">Подсказка для распознавания речи: на уроке часто смешиваются оба языка.</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <label className="checkbox">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
+            <span>
+              Подтверждаю, что законный представитель ученика и преподаватель дали согласие на запись урока и её обработку,
+              включая автоматическую расшифровку речи и анализ с помощью ИИ, в соответствии с законодательством Республики
+              Казахстан о персональных данных. Запись хранится только в учебном центре и доступна родителю ученика.
+            </span>
+          </label>
+        </div>
+
+        {error && <div className="form-error" role="alert">{error}</div>}
+
+        {progress && busy && (
+          <div className="card">
+            <ProgressBar value={progress.ratio} />
+            <p className="small muted mt-2 mb-0">
+              Загружено {formatBytes(progress.loaded)} из {formatBytes(progress.total)} ({Math.round(progress.ratio * 100)} %)
+            </p>
+          </div>
+        )}
+
+        <div className="row">
+          <button type="submit" className="btn btn-primary" disabled={busy || !file || !consent || !studentId}>
+            {busy ? "Загружаем…" : "Загрузить и начать обработку"}
+          </button>
+          {busy && (
+            <button type="button" className="btn" onClick={() => abortRef.current?.abort()}>
+              Отменить
+            </button>
+          )}
+          <Link to="/lessons" className="btn btn-ghost">
+            К списку уроков
+          </Link>
+        </div>
+      </form>
+    </>
+  );
+}

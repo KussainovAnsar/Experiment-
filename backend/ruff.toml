@@ -1,0 +1,11 @@
+line-length = 120
+target-version = "py313"
+extend-exclude = [".venv", "media", "benchmarks/data"]
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["B008", "RUF012", "RUF001", "RUF002", "RUF003", "SIM108", "RUF100"]
+
+[lint.per-file-ignores]
+"app/migrations/versions/*" = ["E501"]
+"app/db/models.py" = ["E501"]

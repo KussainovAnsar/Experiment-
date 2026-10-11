@@ -1,0 +1,110 @@
+[
+  {
+    "index": 0,
+    "timestamp_sec": 6.0,
+    "reason": "interval",
+    "caption": "Zoom-раскладка: два участника, аватары, запись началась",
+    "file": "0000.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 1,
+    "timestamp_sec": 165.0,
+    "reason": "scene",
+    "caption": "Титульный слайд: тема и цель урока",
+    "file": "0001.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 2,
+    "timestamp_sec": 255.0,
+    "reason": "scene",
+    "caption": "Таблица окончаний дательного и предложного падежа",
+    "file": "0002.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 3,
+    "timestamp_sec": 705.0,
+    "reason": "scene",
+    "caption": "Слайд «Куда? или Где?» — направление и место",
+    "file": "0003.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 4,
+    "timestamp_sec": 940.0,
+    "reason": "scene",
+    "caption": "Упражнение 2: шесть предложений с пропусками",
+    "file": "0004.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 5,
+    "timestamp_sec": 1180.0,
+    "reason": "scene",
+    "caption": "Доска: разбор ошибки «иду в школе», параллели с казахским",
+    "file": "0005.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 6,
+    "timestamp_sec": 1260.0,
+    "reason": "scene",
+    "caption": "Упражнение 3 в документе: шесть предложений (пустые)",
+    "file": "0006.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 7,
+    "timestamp_sec": 1420.0,
+    "reason": "scene",
+    "caption": "Упражнение 3: напечатанные ответы ученика, №5 выделено",
+    "file": "0007.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 8,
+    "timestamp_sec": 1625.0,
+    "reason": "scene",
+    "caption": "Упражнение 4: напечатано «хочет учится» (ошибка -тся/-ться)",
+    "file": "0008.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 9,
+    "timestamp_sec": 1725.0,
+    "reason": "scene",
+    "caption": "Упражнение 4: исправлено «учиться», правило проверки вопросом",
+    "file": "0009.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 10,
+    "timestamp_sec": 1860.0,
+    "reason": "scene",
+    "caption": "Итоги урока: четыре правила",
+    "file": "0010.jpg",
+    "width": 1280,
+    "height": 720
+  },
+  {
+    "index": 11,
+    "timestamp_sec": 2010.0,
+    "reason": "scene",
+    "caption": "Домашнее задание и следующий урок",
+    "file": "0011.jpg",
+    "width": 1280,
+    "height": 720
+  }
+]

@@ -1,0 +1,42 @@
+{
+ "lessons_total": 1,
+ "lessons_last_7_days": 1,
+ "lessons_processing": 0,
+ "lessons_failed": 0,
+ "share_objectives_checked": 1.0,
+ "needs_review_count": 0,
+ "recent_lessons": [
+  {
+   "id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+   "student_id": "463aaed3-42a7-44cc-a645-a4a631a480fe",
+   "student_name": "Демо Ученик",
+   "teacher_id": "ead3f045-9bd8-4fdb-a351-8c4ceed9f879",
+   "teacher_name": "Демо Преподаватель",
+   "subject": "russian",
+   "scheduled_at": "2026-10-11T15:30:49Z",
+   "duration_sec": 8.0,
+   "media_kind": "video",
+   "source_filename": "lesson.mp4",
+   "status": "done",
+   "status_message": "Обработка завершена",
+   "error": null,
+   "stage_index": 8,
+   "stage_total": 8,
+   "has_transcript": true,
+   "has_analysis": true,
+   "report_kinds": [
+    "manager",
+    "parent",
+    "teacher"
+   ],
+   "language_hints": [
+    "ru",
+    "kk"
+   ],
+   "consent_confirmed": true,
+   "created_at": "2026-10-11T15:30:49.487890Z",
+   "processed_at": "2026-10-11T15:30:50.331179Z"
+  }
+ ],
+ "needs_review_lessons": []
+}

@@ -1,0 +1,116 @@
+{
+ "student_id": "463aaed3-42a7-44cc-a645-a4a631a480fe",
+ "skills": [
+  {
+   "skill_key": "tsya_tsa",
+   "skill_name": "Правописание -тся / -ться",
+   "status": "struggling",
+   "times_seen": 1,
+   "times_struggled": 1,
+   "first_seen_lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+   "last_seen_lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+   "updated_at": "2026-10-11T15:30:50.276355+00:00",
+   "evidence": [
+    {
+     "kind": "summary",
+     "note": "Итог урока: статус «трудности»",
+     "status": "struggling",
+     "frame_ids": [],
+     "lesson_at": "2026-10-11T15:30:49+00:00",
+     "lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+     "timestamp_sec": 27.0
+    },
+    {
+     "kind": "evidence",
+     "note": "Ошибка «учиться» вместо «учится»",
+     "status": "struggling",
+     "frame_ids": [
+      1
+     ],
+     "lesson_at": "2026-10-11T15:30:49+00:00",
+     "lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+     "timestamp_sec": 27.0
+    },
+    {
+     "kind": "evidence",
+     "note": "Повторила правило после переобъяснения, но без нового примера",
+     "status": "struggling",
+     "frame_ids": [],
+     "lesson_at": "2026-10-11T15:30:49+00:00",
+     "lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+     "timestamp_sec": 38.0
+    },
+    {
+     "kind": "error",
+     "note": "Ошибка: Написала «учиться» вместо «учится» в предложении «Он учится в пятом классе»",
+     "status": "struggling",
+     "frame_ids": [
+      1
+     ],
+     "lesson_at": "2026-10-11T15:30:49+00:00",
+     "lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+     "timestamp_sec": 27.0
+    }
+   ]
+  },
+  {
+   "skill_key": "padezhnye_okonchaniya",
+   "skill_name": "Падежные окончания имён существительных",
+   "status": "developing",
+   "times_seen": 1,
+   "times_struggled": 0,
+   "first_seen_lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+   "last_seen_lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+   "updated_at": "2026-10-11T15:30:50.276355+00:00",
+   "evidence": [
+    {
+     "kind": "summary",
+     "note": "Итог урока: статус «в развитии»",
+     "status": "developing",
+     "frame_ids": [],
+     "lesson_at": "2026-10-11T15:30:49+00:00",
+     "lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+     "timestamp_sec": 13.0
+    },
+    {
+     "kind": "evidence",
+     "note": "Самокоррекция «к школа» → «к школе» без подсказки",
+     "status": "developing",
+     "frame_ids": [],
+     "lesson_at": "2026-10-11T15:30:49+00:00",
+     "lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+     "timestamp_sec": 13.0
+    }
+   ]
+  }
+ ],
+ "lessons": [
+  {
+   "lesson_id": "3db9d8e2-817f-460f-93fa-a38dfd18cd16",
+   "scheduled_at": "2026-10-11T15:30:49+00:00",
+   "status": "done",
+   "topic": "Падежные окончания имён существительных; правописание -тся/-ться",
+   "errors_count": 1,
+   "independent_successes_count": 1,
+   "tasks_total": 2,
+   "tasks_solved_independently": 1,
+   "skills": [
+    {
+     "skill_key": "padezhnye_okonchaniya",
+     "skill_name": "Падежные окончания имён существительных",
+     "status": "developing"
+    },
+    {
+     "skill_key": "tsya_tsa",
+     "skill_name": "Правописание -тся / -ться",
+     "status": "struggling"
+    }
+   ]
+  }
+ ],
+ "counts": {
+  "struggling": 1,
+  "developing": 1,
+  "mastered": 0
+ }
+}

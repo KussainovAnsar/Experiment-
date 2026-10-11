@@ -1,0 +1,1720 @@
+{
+  "environment": {
+    "generated_at": "2026-10-11 15:06 UTC",
+    "python": "3.13.16",
+    "platform": "Linux-6.18.44-fc-v114-x86_64-with-glibc2.39",
+    "cpu_count": 4,
+    "threads": 4,
+    "backend": "whisper-onnx",
+    "backend_version": "onnxruntime 1.31.0",
+    "compute_type": "int8",
+    "decoding": "greedy",
+    "dataset_info": {
+      "tts_engine": "piper-tts kk_KZ-issai-high,ru_RU-dmitri-medium,ru_RU-irina-medium",
+      "sample_rate": 16000,
+      "elapsed_sec": 99.0,
+      "subsets": {
+        "ru/clean": {
+          "n": 32,
+          "audio_sec": 134.5
+        },
+        "ru/degraded": {
+          "n": 32,
+          "audio_sec": 134.5
+        },
+        "kk/clean": {
+          "n": 30,
+          "audio_sec": 60.2
+        },
+        "mixed/clean": {
+          "n": 30,
+          "audio_sec": 102.8
+        },
+        "mixed/degraded": {
+          "n": 30,
+          "audio_sec": 102.8
+        }
+      }
+    }
+  },
+  "models": [
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "backend_version": "onnxruntime 1.31.0",
+      "backend_model": "tiny",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T15:06:19.274607+00:00",
+      "elapsed_sec": 103.4
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "backend_version": "onnxruntime 1.31.0",
+      "backend_model": "base",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T15:08:02.731088+00:00",
+      "elapsed_sec": 183.5
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "backend_version": "onnxruntime 1.31.0",
+      "backend_model": "small",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T15:11:06.290358+00:00",
+      "elapsed_sec": 542.6
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "backend_version": "onnxruntime 1.31.0",
+      "backend_model": "medium",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T15:20:08.868722+00:00",
+      "elapsed_sec": 2115.8
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "backend_version": "1.13.8",
+      "backend_model": "tiny",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T14:23:44.445522+00:00",
+      "elapsed_sec": 99.8
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "backend_version": "1.13.8",
+      "backend_model": "base",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T14:25:24.257305+00:00",
+      "elapsed_sec": 154.4
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "backend_version": "1.13.8",
+      "backend_model": "small",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T14:27:58.645457+00:00",
+      "elapsed_sec": 441.2
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "backend_version": "1.13.8",
+      "backend_model": "medium",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T14:35:19.883171+00:00",
+      "elapsed_sec": 1706.8
+    }
+  ],
+  "runs": [
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 17.95,
+      "rtf": 0.133,
+      "wer": 0.5505,
+      "cer": 0.2641,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 9.85,
+      "rtf": 0.073,
+      "wer": 0.5505,
+      "cer": 0.2641,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 15.14,
+      "rtf": 0.113,
+      "wer": 0.5733,
+      "cer": 0.2836,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 13.78,
+      "rtf": 0.229,
+      "wer": 1.0438,
+      "cer": 0.5696,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 5.15,
+      "rtf": 0.086,
+      "wer": 1.0511,
+      "cer": 0.9158,
+      "detected_languages": {
+        "tr": 16,
+        "ru": 5,
+        "ja": 3,
+        "de": 2,
+        "ko": 1,
+        "zh": 1,
+        "lt": 1,
+        "tl": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 11.69,
+      "rtf": 0.114,
+      "wer": 0.8729,
+      "cer": 0.6032,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 7.12,
+      "rtf": 0.069,
+      "wer": 1.0276,
+      "cer": 0.6593,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 4.31,
+      "rtf": 0.042,
+      "wer": 0.8619,
+      "cer": 0.6415,
+      "detected_languages": {
+        "ru": 26,
+        "tr": 3,
+        "ja": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 11.95,
+      "rtf": 0.116,
+      "wer": 0.8453,
+      "cer": 0.5507,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "tiny",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 5.77,
+      "rtf": 0.056,
+      "wer": 0.8398,
+      "cer": 0.5756,
+      "detected_languages": {
+        "ru": 26,
+        "tr": 1,
+        "pl": 1,
+        "de": 1,
+        "ja": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 26.18,
+      "rtf": 0.195,
+      "wer": 0.3355,
+      "cer": 0.1092,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 16.55,
+      "rtf": 0.123,
+      "wer": 0.3453,
+      "cer": 0.1272,
+      "detected_languages": {
+        "ru": 31,
+        "pl": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 27.85,
+      "rtf": 0.207,
+      "wer": 0.3681,
+      "cer": 0.1262,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 25.24,
+      "rtf": 0.419,
+      "wer": 0.9416,
+      "cer": 0.4386,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 10.57,
+      "rtf": 0.176,
+      "wer": 1.0803,
+      "cer": 0.9123,
+      "detected_languages": {
+        "tr": 17,
+        "ru": 3,
+        "ar": 3,
+        "ko": 2,
+        "pl": 1,
+        "az": 1,
+        "ka": 1,
+        "id": 1,
+        "hy": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 18.21,
+      "rtf": 0.177,
+      "wer": 0.7735,
+      "cer": 0.4537,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 14.7,
+      "rtf": 0.143,
+      "wer": 0.9171,
+      "cer": 0.444,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 9.51,
+      "rtf": 0.092,
+      "wer": 0.8011,
+      "cer": 0.548,
+      "detected_languages": {
+        "ru": 24,
+        "tr": 4,
+        "lt": 1,
+        "ja": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 20.87,
+      "rtf": 0.203,
+      "wer": 0.7624,
+      "cer": 0.4128,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "base",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 12.79,
+      "rtf": 0.124,
+      "wer": 0.7569,
+      "cer": 0.4564,
+      "detected_languages": {
+        "ru": 27,
+        "tr": 2,
+        "ja": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 72.91,
+      "rtf": 0.542,
+      "wer": 0.202,
+      "cer": 0.0687,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 55.75,
+      "rtf": 0.414,
+      "wer": 0.202,
+      "cer": 0.0687,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 71.18,
+      "rtf": 0.529,
+      "wer": 0.2541,
+      "cer": 0.0872,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 69.23,
+      "rtf": 1.15,
+      "wer": 0.7883,
+      "cer": 0.2936,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 42.5,
+      "rtf": 0.706,
+      "wer": 0.9489,
+      "cer": 0.5871,
+      "detected_languages": {
+        "kk": 12,
+        "tr": 7,
+        "ru": 5,
+        "mn": 1,
+        "nl": 1,
+        "de": 1,
+        "sq": 1,
+        "lt": 1,
+        "hy": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 50.86,
+      "rtf": 0.495,
+      "wer": 0.7459,
+      "cer": 0.4279,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 57.43,
+      "rtf": 0.559,
+      "wer": 1.011,
+      "cer": 0.6254,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 35.74,
+      "rtf": 0.348,
+      "wer": 0.7403,
+      "cer": 0.4751,
+      "detected_languages": {
+        "ru": 26,
+        "tr": 2,
+        "kk": 1,
+        "bs": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 50.06,
+      "rtf": 0.487,
+      "wer": 0.7293,
+      "cer": 0.4066,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "small",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 34.8,
+      "rtf": 0.339,
+      "wer": 0.7127,
+      "cer": 0.4146,
+      "detected_languages": {
+        "ru": 27,
+        "kk": 1,
+        "uk": 1,
+        "tr": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 266.63,
+      "rtf": 1.982,
+      "wer": 0.1824,
+      "cer": 0.0821,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 218.8,
+      "rtf": 1.626,
+      "wer": 0.1824,
+      "cer": 0.0821,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 285.85,
+      "rtf": 2.124,
+      "wer": 0.1661,
+      "cer": 0.0554,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 260.46,
+      "rtf": 4.326,
+      "wer": 0.6715,
+      "cer": 0.2585,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 184.89,
+      "rtf": 3.071,
+      "wer": 0.8467,
+      "cer": 0.4784,
+      "detected_languages": {
+        "kk": 16,
+        "az": 4,
+        "tr": 3,
+        "ru": 2,
+        "ar": 1,
+        "uk": 1,
+        "ur": 1,
+        "en": 1,
+        "ko": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 165.69,
+      "rtf": 1.612,
+      "wer": 0.6685,
+      "cer": 0.4253,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 224.71,
+      "rtf": 2.187,
+      "wer": 0.8895,
+      "cer": 0.5276,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 149.22,
+      "rtf": 1.452,
+      "wer": 0.6685,
+      "cer": 0.4101,
+      "detected_languages": {
+        "ru": 20,
+        "kk": 8,
+        "az": 1,
+        "mk": 1
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 176.05,
+      "rtf": 1.713,
+      "wer": 0.7072,
+      "cer": 0.4706,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "medium",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 174.63,
+      "rtf": 1.699,
+      "wer": 0.6796,
+      "cer": 0.4226,
+      "detected_languages": {
+        "ru": 22,
+        "kk": 8
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 11.95,
+      "rtf": 0.089,
+      "wer": 0.4593,
+      "cer": 0.179,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 12.39,
+      "rtf": 0.092,
+      "wer": 0.4593,
+      "cer": 0.179,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 11.1,
+      "rtf": 0.083,
+      "wer": 0.4919,
+      "cer": 0.1882,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 6.76,
+      "rtf": 0.112,
+      "wer": 0.9708,
+      "cer": 0.6854,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 6.62,
+      "rtf": 0.11,
+      "wer": 1.073,
+      "cer": 0.917,
+      "detected_languages": {
+        "tr": 13,
+        "ja": 4,
+        "en": 2,
+        "ru": 2,
+        "lt": 2,
+        "zh": 1,
+        "de": 1,
+        "ro": 1,
+        "hr": 1,
+        "ko": 1,
+        "tl": 1,
+        "az": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 8.57,
+      "rtf": 0.083,
+      "wer": 0.7459,
+      "cer": 0.3932,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 9.44,
+      "rtf": 0.092,
+      "wer": 0.9006,
+      "cer": 0.4733,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 9.56,
+      "rtf": 0.093,
+      "wer": 0.7569,
+      "cer": 0.4475,
+      "detected_languages": {
+        "ru": 26,
+        "da": 1,
+        "tr": 1,
+        "de": 1,
+        "sk": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 9.12,
+      "rtf": 0.089,
+      "wer": 0.7845,
+      "cer": 0.4244,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "tiny",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 8.88,
+      "rtf": 0.086,
+      "wer": 0.8619,
+      "cer": 0.4724,
+      "detected_languages": {
+        "ru": 27,
+        "tr": 2,
+        "ja": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 18.04,
+      "rtf": 0.134,
+      "wer": 0.3583,
+      "cer": 0.1369,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 19.06,
+      "rtf": 0.142,
+      "wer": 0.3779,
+      "cer": 0.1544,
+      "detected_languages": {
+        "ru": 31,
+        "pl": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 18.58,
+      "rtf": 0.138,
+      "wer": 0.3257,
+      "cer": 0.1133,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 10.81,
+      "rtf": 0.179,
+      "wer": 0.9708,
+      "cer": 0.6363,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 11.61,
+      "rtf": 0.193,
+      "wer": 1.0876,
+      "cer": 0.8947,
+      "detected_languages": {
+        "tr": 12,
+        "kk": 4,
+        "en": 2,
+        "mn": 2,
+        "ko": 1,
+        "pt": 1,
+        "bo": 1,
+        "de": 1,
+        "ru": 1,
+        "lt": 1,
+        "ka": 1,
+        "ar": 1,
+        "id": 1,
+        "hy": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 12.77,
+      "rtf": 0.124,
+      "wer": 0.768,
+      "cer": 0.4368,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 15.78,
+      "rtf": 0.154,
+      "wer": 0.9724,
+      "cer": 0.5649,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 13.03,
+      "rtf": 0.127,
+      "wer": 0.768,
+      "cer": 0.5151,
+      "detected_languages": {
+        "ru": 23,
+        "tr": 2,
+        "kk": 1,
+        "lt": 1,
+        "la": 1,
+        "uk": 1,
+        "ja": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 12.79,
+      "rtf": 0.124,
+      "wer": 0.7569,
+      "cer": 0.4048,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "base",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 13.51,
+      "rtf": 0.131,
+      "wer": 0.8011,
+      "cer": 0.468,
+      "detected_languages": {
+        "ru": 24,
+        "tr": 2,
+        "kk": 1,
+        "lt": 1,
+        "uk": 1,
+        "ja": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 55.14,
+      "rtf": 0.41,
+      "wer": 0.2313,
+      "cer": 0.079,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 57.3,
+      "rtf": 0.426,
+      "wer": 0.2313,
+      "cer": 0.079,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 55.03,
+      "rtf": 0.409,
+      "wer": 0.2508,
+      "cer": 0.0867,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 33.15,
+      "rtf": 0.551,
+      "wer": 0.927,
+      "cer": 0.5871,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 32.94,
+      "rtf": 0.547,
+      "wer": 1.0803,
+      "cer": 0.7626,
+      "detected_languages": {
+        "kk": 9,
+        "tr": 7,
+        "ru": 5,
+        "hy": 2,
+        "az": 2,
+        "ar": 1,
+        "ms": 1,
+        "fi": 1,
+        "en": 1,
+        "ps": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 35.76,
+      "rtf": 0.348,
+      "wer": 0.7127,
+      "cer": 0.3915,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 44.64,
+      "rtf": 0.434,
+      "wer": 0.9227,
+      "cer": 0.6361,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 38.23,
+      "rtf": 0.372,
+      "wer": 0.7403,
+      "cer": 0.4502,
+      "detected_languages": {
+        "ru": 23,
+        "kk": 3,
+        "lt": 2,
+        "tr": 1,
+        "uk": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 33.77,
+      "rtf": 0.329,
+      "wer": 0.7293,
+      "cer": 0.4146,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "small",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 36.51,
+      "rtf": 0.355,
+      "wer": 0.7403,
+      "cer": 0.4804,
+      "detected_languages": {
+        "ru": 25,
+        "lt": 3,
+        "kk": 1,
+        "tr": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 215.12,
+      "rtf": 1.599,
+      "wer": 0.1889,
+      "cer": 0.0764,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 231.11,
+      "rtf": 1.718,
+      "wer": 0.1889,
+      "cer": 0.0764,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 231.53,
+      "rtf": 1.721,
+      "wer": 0.202,
+      "cer": 0.0738,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 141.81,
+      "rtf": 2.355,
+      "wer": 0.8613,
+      "cer": 0.5626,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 130.0,
+      "rtf": 2.159,
+      "wer": 0.8978,
+      "cer": 0.6608,
+      "detected_languages": {
+        "kk": 21,
+        "az": 7,
+        "tr": 1,
+        "fi": 1
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 109.09,
+      "rtf": 1.062,
+      "wer": 0.6851,
+      "cer": 0.4786,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 171.66,
+      "rtf": 1.67,
+      "wer": 0.9006,
+      "cer": 0.5925,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 136.48,
+      "rtf": 1.328,
+      "wer": 0.6796,
+      "cer": 0.4448,
+      "detected_languages": {
+        "ru": 18,
+        "kk": 12
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 123.33,
+      "rtf": 1.2,
+      "wer": 0.7017,
+      "cer": 0.468,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null
+    },
+    {
+      "model": "medium",
+      "backend": "sherpa-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 159.73,
+      "rtf": 1.554,
+      "wer": 0.6685,
+      "cer": 0.4422,
+      "detected_languages": {
+        "ru": 19,
+        "kk": 11
+      },
+      "skipped": false,
+      "skip_reason": null
+    }
+  ]
+}

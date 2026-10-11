@@ -1,0 +1,9 @@
+# Benchmark-only dependencies (not needed by the app). Install into backend/.venv:
+#   .venv/bin/pip install -r benchmarks/requirements-bench.txt
+piper-tts>=1.8.0          # TTS for the synthetic dataset (bundles espeak-ng data)
+huggingface_hub>=0.30     # Piper voice download (primary source)
+faster-whisper>=1.2.0     # CTranslate2 Whisper — the production whisper_local backend
+sherpa-onnx>=1.12         # fallback Whisper runtime (ONNX, models on GitHub releases)
+jiwer>=4.0                # WER / CER
+soundfile>=0.13           # wav I/O
+numpy>=2.0

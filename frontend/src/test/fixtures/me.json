@@ -1,0 +1,9 @@
+{
+ "id": "deb7483d-1a83-4428-bb5e-a75a01fad43e",
+ "email": "owner@example.com",
+ "full_name": "Демо Владелец",
+ "role": "owner",
+ "center_id": "60bcfcf2-c918-4711-8f0d-7e2d115f945a",
+ "center_name": "Frontend smoke",
+ "teacher_id": null
+}
