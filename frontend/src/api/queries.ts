@@ -6,6 +6,8 @@ import { parentApi } from "./parent";
 import { centerApi, lessonsApi, parentsApi, studentsApi, teachersApi, type LessonListParams } from "./staff";
 
 export const LESSON_POLL_MS = 3000;
+/** Media tokens live ~10 minutes (MEDIA_TOKEN_TTL_MINUTES); refresh them a bit earlier while the page is open. */
+export const MEDIA_TOKEN_REFRESH_MS = 8 * 60 * 1000;
 
 export const keys = {
   me: ["auth", "me"] as const,
@@ -16,6 +18,7 @@ export const keys = {
   frames: (id: string) => ["lesson", id, "frames"] as const,
   analysis: (id: string) => ["lesson", id, "analysis"] as const,
   reports: (id: string) => ["lesson", id, "reports"] as const,
+  mediaToken: (id: string) => ["lesson", id, "media-token"] as const,
   report: (id: string, kind: ReportKind) => ["lesson", id, "report", kind] as const,
   teachers: ["teachers"] as const,
   students: ["students"] as const,
@@ -82,6 +85,17 @@ export function useReports(id: string, enabled: boolean) {
   return useQuery({ queryKey: keys.reports(id), queryFn: () => lessonsApi.reports(id), enabled });
 }
 
+export function useLessonMediaToken(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.mediaToken(id),
+    queryFn: () => lessonsApi.mediaToken(id),
+    enabled,
+    staleTime: MEDIA_TOKEN_REFRESH_MS,
+    refetchInterval: MEDIA_TOKEN_REFRESH_MS,
+    refetchIntervalInBackground: true,
+  });
+}
+
 export function useTeachers() {
   return useQuery({ queryKey: keys.teachers, queryFn: () => teachersApi.list() });
 }
@@ -140,6 +154,8 @@ export function useParentLesson(studentId: string, lessonId: string) {
   return useQuery({
     queryKey: keys.parentLesson(studentId, lessonId),
     queryFn: () => parentApi.lesson(studentId, lessonId),
+    // the response carries the media token for the frames: keep it fresh while the page stays open
+    refetchInterval: MEDIA_TOKEN_REFRESH_MS,
   });
 }
 

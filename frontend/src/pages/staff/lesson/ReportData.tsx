@@ -92,6 +92,25 @@ const KEY_LABELS: Record<string, string> = {
   recommendations_total: "Рекомендаций",
   duration_sec: "Длительность",
   words_total: "Слов в транскрипте",
+  // manager report `counts` / `key_episodes` (backend/app/pipeline/reports.py build_manager_report_data)
+  errors: "Ошибок",
+  errors_repeated_after_explanation: "Повторились после объяснения",
+  independent_successes: "Самостоятельных успехов",
+  misconceptions_strong: "Сильных сигналов о пробелах",
+  re_explanations: "Переобъяснений",
+  timecode: "Время",
+  // teacher report nested objects
+  frames: "Кадры",
+  frame: "Кадр",
+  index: "Кадр №",
+  timestamp_sec: "Время",
+  repeated_at: "Повторилась в",
+  priority_ru: "Приоритет",
+  status_ru: "Статус",
+  signal_strength_ru: "Сила сигнала",
+  kind_ru: "Тип события",
+  speaker_ru: "Кто говорит",
+  lesson_summary_short: "Кратко",
 };
 
 const VALUE_LABELS: Record<string, string> = {

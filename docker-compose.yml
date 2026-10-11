@@ -1,0 +1,99 @@
+# LessonLens — local stack: PostgreSQL + API + job worker + frontend dev server.
+#
+#   docker compose up --build                   # http://localhost:5173 (UI), http://localhost:8000/api/docs
+#   docker compose run --rm api python -m app.seed_demo --reset   # demo data (mock providers)
+#
+# Provider keys and other settings come from .env (copy .env.example). SECRET_KEY is mandatory: `docker compose`
+# refuses to start the api/worker without it (`${SECRET_KEY:?}`), so a deployment can never run with the public
+# default key. PostgreSQL is published on loopback only; set POSTGRES_PASSWORD for anything but a laptop.
+# The compose file is best-effort: it was written against the Dockerfiles in this repo but could not be executed
+# in the authoring environment (no Docker daemon) — see README.md.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lessonlens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lessonlens}
+      POSTGRES_DB: lessonlens
+    ports:
+      # loopback only: the api/worker reach postgres over the compose network; never expose the DB publicly
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lessonlens -d lessonlens"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://lessonlens:${POSTGRES_PASSWORD:-lessonlens}@postgres:5432/lessonlens
+      DATABASE_URL_SYNC: postgresql+psycopg://lessonlens:${POSTGRES_PASSWORD:-lessonlens}@postgres:5432/lessonlens
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set (random, 32+ chars; see .env.example)}
+      MEDIA_ROOT: /srv/media
+      PIPELINE_MODE: ${PIPELINE_MODE:-worker}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:5173}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      STT_PROVIDER: ${STT_PROVIDER:-mock}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      APP_ENV: ${APP_ENV:-dev}
+    ports:
+      - "8000:8000"
+    volumes:
+      - media:/srv/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://lessonlens:${POSTGRES_PASSWORD:-lessonlens}@postgres:5432/lessonlens
+      DATABASE_URL_SYNC: postgresql+psycopg://lessonlens:${POSTGRES_PASSWORD:-lessonlens}@postgres:5432/lessonlens
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set (random, 32+ chars; see .env.example)}
+      MEDIA_ROOT: /srv/media
+      PIPELINE_MODE: worker
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:5173}
+      STT_PROVIDER: ${STT_PROVIDER:-mock}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      APP_ENV: ${APP_ENV:-dev}
+    volumes:
+      - media:/srv/media
+    depends_on:
+      api:
+        condition: service_started
+    command: python -m app.worker
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_PROXY_TARGET: http://api:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      # live reload of sources while developing; node_modules stay inside the image
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  media:

@@ -15,10 +15,13 @@ from fastapi.responses import JSONResponse
 from app.api import auth, centers, health, lessons, media, parent, people, progress, reports
 from app.config import get_settings
 from app.logging import configure_logging, get_logger
+from app.startup_checks import check_secret_key
 
 settings = get_settings()
 configure_logging(level="DEBUG" if settings.app_env == "dev" else "INFO", json_output=settings.app_env != "dev")
 log = get_logger("app.main")
+
+check_secret_key(settings)
 
 try:
     from app.api.telegram import router as telegram_router
@@ -34,11 +37,40 @@ except ImportError as _exc:  # module C not present yet
     log.warning("telegram_bot_missing", error=str(_exc))
 
 
+async def _sweep_interrupted_lessons() -> None:
+    """Inline mode: lessons left mid-pipeline by a previous process can never resume → mark them failed."""
+    try:
+        from app.pipeline.runner import sweep_interrupted_lessons
+    except ImportError as exc:  # module B1 not present
+        log.warning("pipeline_runner_missing", error=str(exc))
+        return
+    try:
+        swept = await sweep_interrupted_lessons()
+    except Exception as exc:  # DB not reachable yet: the API still starts, /api/health reports it
+        log.error("lesson_sweep_failed", error=type(exc).__name__)
+        return
+    if swept:
+        log.warning("lessons_marked_failed_after_restart", count=swept)
+
+
+async def _drain_inline_pipelines() -> None:
+    try:
+        from app.pipeline.runner import shutdown_inline_tasks
+    except ImportError:
+        return
+    try:
+        await shutdown_inline_tasks()
+    except Exception as exc:
+        log.error("inline_pipelines_shutdown_failed", error=type(exc).__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Start/stop background services (Telegram polling when configured)."""
+    """Start/stop background services: stuck-lesson sweep and pipeline drain (inline mode), Telegram polling."""
     settings.media_root.mkdir(parents=True, exist_ok=True)
     log.info("app_start", app_env=settings.app_env, pipeline_mode=settings.pipeline_mode)
+    if settings.pipeline_mode == "inline":
+        await _sweep_interrupted_lessons()
     if start_polling_background is not None:
         try:
             await start_polling_background(app)
@@ -47,6 +79,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        if settings.pipeline_mode == "inline":
+            await _drain_inline_pipelines()
         if stop_polling_background is not None:
             try:
                 await stop_polling_background(app)

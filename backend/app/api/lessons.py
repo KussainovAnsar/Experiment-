@@ -29,8 +29,10 @@ from app.db.models import (
     Transcript,
 )
 from app.logging import get_logger
-from app.schemas.api import AnalysisOut, FrameOut, LessonOut, Page, TranscriptOut
+from app.pipeline.locking import can_start_processing
+from app.schemas.api import AnalysisOut, FrameOut, LessonOut, MediaTokenOut, Page, TranscriptOut
 from app.services.audit import audit
+from app.services.auth import create_media_token
 from app.services.storage import lesson_dir, safe_extension, source_path
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
@@ -348,9 +350,14 @@ async def get_lesson(lesson_id: uuid.UUID, user: CurrentStaff, session: DbSessio
 
 @router.post("/{lesson_id}/reprocess", response_model=LessonOut)
 async def reprocess_lesson(lesson_id: uuid.UUID, user: CurrentStaff, session: DbSession) -> LessonOut:
-    """Reset a finished or failed lesson to ``uploaded`` and run the pipeline again."""
+    """Reset a finished / failed lesson to ``uploaded`` and run the pipeline again.
+
+    A lesson still being processed answers 409 — unless its intermediate status has not moved for
+    ``PIPELINE_STALE_MINUTES`` (abandoned run), which may be restarted. The pipeline itself claims the lesson
+    atomically, so a duplicate request can never start a second concurrent run.
+    """
     lesson = await get_lesson_or_404(session, user, lesson_id)
-    if lesson.status not in (LessonStatus.done, LessonStatus.failed, LessonStatus.uploaded):
+    if not can_start_processing(lesson):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Урок уже обрабатывается")
     if not lesson.source_path or not Path(lesson.source_path).exists():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Исходный файл урока не найден на диске")
@@ -413,9 +420,26 @@ async def get_frames(lesson_id: uuid.UUID, user: CurrentStaff, session: DbSessio
     ]
 
 
+@router.get("/{lesson_id}/media-token", response_model=MediaTokenOut)
+async def get_media_token(lesson_id: uuid.UUID, user: CurrentStaff, session: DbSession) -> MediaTokenOut:
+    """Short-lived token for ``?access_token=`` on this lesson's frame / source URLs (CONTRACT §9: media via API)."""
+    lesson = await get_lesson_or_404(session, user, lesson_id)
+    token, expires_at = create_media_token(
+        principal="staff", principal_id=user.id, center_id=user.center_id, lesson_id=lesson.id
+    )
+    return MediaTokenOut(access_token=token, lesson_id=lesson.id, expires_at=expires_at)
+
+
+def analysis_data_for(user: StaffUser, data: dict[str, Any]) -> dict[str, Any]:
+    """Teachers get the analysis without ``manager_indicators`` (CONTRACT §6: «без manager-отчёта»)."""
+    if not is_teacher(user) or "manager_indicators" not in data:
+        return data
+    return {**data, "manager_indicators": None}
+
+
 @router.get("/{lesson_id}/analysis", response_model=AnalysisOut)
 async def get_analysis(lesson_id: uuid.UUID, user: CurrentStaff, session: DbSession) -> AnalysisOut:
-    """The validated ``LessonAnalysis`` JSON plus provider metadata."""
+    """The validated ``LessonAnalysis`` JSON plus provider metadata (teachers: without ``manager_indicators``)."""
     lesson = await get_lesson_or_404(session, user, lesson_id)
     analysis = (await session.execute(select(Analysis).where(Analysis.lesson_id == lesson.id))).scalar_one_or_none()
     if analysis is None:
@@ -424,7 +448,7 @@ async def get_analysis(lesson_id: uuid.UUID, user: CurrentStaff, session: DbSess
         provider=analysis.provider,
         model=analysis.model,
         prompt_version=analysis.prompt_version,
-        data=analysis.data,
+        data=analysis_data_for(user, analysis.data or {}),
         tokens_in=analysis.tokens_in,
         tokens_out=analysis.tokens_out,
         latency_ms=analysis.latency_ms,

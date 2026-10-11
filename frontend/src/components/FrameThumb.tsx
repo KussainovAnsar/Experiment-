@@ -1,14 +1,10 @@
-/** Frame thumbnails that resolve frame indices to media URLs with the access token. */
-import { withAccessToken, type Realm } from "@/auth/storage";
+/** Frame thumbnails: media URLs carry the short-lived media token from `MediaTokenContext`. */
+import { useMediaUrl } from "@/auth/media";
 import { formatTimecode } from "@/lib/format";
 import { useSeek } from "@/hooks/useSeek";
 import type { Frame, ParentFrame } from "@/types/api";
 
 type AnyFrame = Frame | ParentFrame;
-
-export function frameSrc(frame: AnyFrame, realm: Realm): string {
-  return withAccessToken(frame.url, realm);
-}
 
 /** Pick the frame whose timestamp is closest to `seconds` (null when no frames). */
 export function nearestFrame<T extends AnyFrame>(frames: T[] | undefined, seconds: number | null): T | null {
@@ -27,31 +23,32 @@ export function nearestFrame<T extends AnyFrame>(frames: T[] | undefined, second
 
 export function FrameInline({
   frame,
-  realm = "staff",
+  caption,
   onClick,
 }: {
   frame: AnyFrame;
-  realm?: Realm;
+  /** Replaces the technical «#index · mm:ss» label (parent portal). */
+  caption?: string | null;
   onClick?: () => void;
 }) {
   const seek = useSeek();
+  const mediaUrl = useMediaUrl();
+  const technical = `Кадр ${frame.index} · ${formatTimecode(frame.timestamp_sec)}`;
   return (
     <button
       type="button"
-      className="frame-inline"
+      className={`frame-inline${caption ? " frame-inline-captioned" : ""}`}
       onClick={onClick ?? (() => seek(frame.timestamp_sec))}
-      title={`Кадр ${frame.index} · ${formatTimecode(frame.timestamp_sec)}`}
+      title={caption ?? technical}
     >
-      <img src={frameSrc(frame, realm)} alt={`Кадр ${frame.index}`} loading="lazy" />
-      <span>
-        #{frame.index} · {formatTimecode(frame.timestamp_sec)}
-      </span>
+      <img src={mediaUrl(frame.url)} alt={caption ?? technical} loading="lazy" />
+      <span>{caption ?? `#${frame.index} · ${formatTimecode(frame.timestamp_sec)}`}</span>
     </button>
   );
 }
 
 /** Render inline thumbnails for a list of frame indices (unknown indices are skipped). */
-export function FrameRefs({ frameIds, frames, realm = "staff" }: { frameIds: number[]; frames?: AnyFrame[]; realm?: Realm }) {
+export function FrameRefs({ frameIds, frames }: { frameIds: number[]; frames?: AnyFrame[] }) {
   if (!frames || frameIds.length === 0) return null;
   const byIndex = new Map(frames.map((f) => [f.index, f]));
   const found = frameIds.map((id) => byIndex.get(id)).filter((f): f is AnyFrame => Boolean(f));
@@ -59,7 +56,7 @@ export function FrameRefs({ frameIds, frames, realm = "staff" }: { frameIds: num
   return (
     <div className="row mt-2">
       {found.map((f) => (
-        <FrameInline key={f.index} frame={f} realm={realm} />
+        <FrameInline key={f.index} frame={f} />
       ))}
     </div>
   );

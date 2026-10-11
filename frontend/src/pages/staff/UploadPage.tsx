@@ -62,6 +62,10 @@ export function UploadPage() {
       setError("Выберите ученика.");
       return;
     }
+    if (!teacherId) {
+      setError("Выберите преподавателя.");
+      return;
+    }
     if (!consent) {
       setError("Подтвердите наличие согласия на обработку записи.");
       return;
@@ -161,7 +165,14 @@ export function UploadPage() {
             </div>
             <div className="field">
               <label htmlFor="teacher">Преподаватель</label>
-              <select id="teacher" className="select" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} disabled={isTeacher && Boolean(user?.teacher_id)}>
+              <select
+                id="teacher"
+                className="select"
+                required
+                value={teacherId}
+                onChange={(e) => setTeacherId(e.target.value)}
+                disabled={isTeacher && Boolean(user?.teacher_id)}
+              >
                 <option value="">— выберите преподавателя —</option>
                 {teachers.data?.items.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -193,14 +204,20 @@ export function UploadPage() {
         </div>
 
         <div className="card">
+          {/* Wording is the vetted staff attestation from docs/CONSENT_TEMPLATE.md §4 — keep the two in sync. */}
           <label className="checkbox">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
             <span>
-              Подтверждаю, что законный представитель ученика и преподаватель дали согласие на запись урока и её обработку,
-              включая автоматическую расшифровку речи и анализ с помощью ИИ, в соответствии с законодательством Республики
-              Казахстан о персональных данных. Запись хранится только в учебном центре и доступна родителю ученика.
+              <strong>Подтверждаю, что у центра есть действующие письменные согласия законного представителя ученика и преподавателя</strong>{" "}
+              на запись этого урока, его автоматизированный анализ системой LessonLens и передачу данных поставщикам
+              распознавания речи и модели ИИ, перечисленным в Политике конфиденциальности. Я понимаю, что загрузка записи без
+              таких согласий запрещена, а факт подтверждения записывается в журнал действий.
             </span>
           </label>
+          <p className="field-hint mt-2 mb-0">
+            Согласия хранятся в центре. Шаблон — docs/CONSENT_TEMPLATE.md. Если согласие отозвано — не загружайте запись и
+            сообщите ответственному за персональные данные.
+          </p>
         </div>
 
         {error && <div className="form-error" role="alert">{error}</div>}
@@ -215,7 +232,7 @@ export function UploadPage() {
         )}
 
         <div className="row">
-          <button type="submit" className="btn btn-primary" disabled={busy || !file || !consent || !studentId}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !file || !consent || !studentId || !teacherId}>
             {busy ? "Загружаем…" : "Загрузить и начать обработку"}
           </button>
           {busy && (

@@ -4,7 +4,13 @@
 Every stage opens its own ``AsyncSession`` from the sessionmaker: the status is written and committed before
 the work starts, artefacts are committed when the stage ends, so partial progress survives a crash and the
 frontend can poll ``GET /api/lessons/{id}`` for progress. Any exception marks the lesson ``failed`` with a
-Russian ``status_message`` and the truncated technical ``error``; nothing propagates to the caller.
+Russian ``status_message`` and the truncated technical ``error`` (file-system paths are redacted); nothing
+propagates to the caller.
+
+A run starts by *claiming* the lesson (``app.pipeline.locking.claim_lesson``, a compare-and-set on
+``lessons.status``): a second concurrent run — double click, duplicate job, retry — gets ``status=None`` back and
+touches nothing. Inline-mode background tasks are tracked so the API can finish or cancel them on shutdown and
+sweep lessons that a dead process left in an intermediate status (``sweep_interrupted_lessons``).
 
 Module B2 (``analysis``/``reports``/``progress``) and module C (``notifications``) are imported lazily at
 stage time; tests may override them through :data:`HOOK_OVERRIDES`.
@@ -18,20 +24,22 @@ import inspect
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import structlog
 from sqlalchemy import delete, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from app.config import Settings, get_settings
+from app.config import REPO_DIR, Settings, get_settings
 from app.db.models import Frame, FrameReason, Lesson, LessonStatus, MediaKind, Transcript
 from app.db.session import get_sessionmaker
 from app.logging import get_logger
-from app.pipeline import jobs
+from app.pipeline import jobs, locking
 from app.pipeline.media import ExtractedFrame, MediaError, MediaInfo, extract_audio, extract_keyframes, probe_media
 from app.pipeline.media import spread_indices as _spread_indices
 from app.providers.stt.base import ProviderNotConfigured, STTError, TranscriptResult
@@ -40,8 +48,36 @@ from app.providers.stt.registry import get_stt_provider
 log = get_logger("app.pipeline.runner")
 
 INLINE_START_DELAY_SEC = 0.2
+INLINE_SHUTDOWN_TIMEOUT_SEC = 10.0
 _ERROR_MAX_CHARS = 2000
 _STATUS_MESSAGE_MAX = 500
+CANCELLED_MESSAGE = "Обработка прервана остановкой сервера — запустите обработку заново"
+
+# Failures that will not go away on a retry (bad file, invalid model output, DB constraint, missing module).
+# The worker does not re-run these; transient STT/LLM/network errors stay retryable.
+NON_RETRYABLE_ERROR_TYPES: frozenset[str] = frozenset(
+    {
+        "MediaError",
+        "ValidationError",
+        "AnalysisInputError",
+        "PipelineDependencyMissing",
+        "ProviderNotConfigured",
+        "DBAPIError",
+        "IntegrityError",
+        "DataError",
+        "ProgrammingError",
+        "LessonMissing",
+    }
+)
+
+
+@dataclass(slots=True)
+class PipelineResult:
+    """Outcome of one run: ``status`` is ``None`` when the lesson was already owned by another run (no-op)."""
+
+    status: LessonStatus | None
+    error_type: str | None = None
+    retryable: bool = False
 
 # Human-readable (Russian) progress messages per stage.
 STAGE_MESSAGES: dict[LessonStatus, str] = {
@@ -112,6 +148,9 @@ async def enqueue_lesson_processing(session: AsyncSession, lesson_id: uuid.UUID)
     """
     settings = get_settings()
     if settings.pipeline_mode == "worker":
+        if await jobs.has_active_job(session, jobs.KIND_PROCESS_LESSON, lesson_id=lesson_id):
+            log.info("lesson_job_already_queued", lesson_id=str(lesson_id))
+            return
         await jobs.enqueue(session, jobs.KIND_PROCESS_LESSON, {"lesson_id": str(lesson_id)})
         log.info("lesson_job_enqueued", lesson_id=str(lesson_id))
         return
@@ -127,15 +166,45 @@ async def _run_inline(lesson_id: uuid.UUID) -> None:
     await run_lesson_pipeline(lesson_id)
 
 
+async def shutdown_inline_tasks(timeout: float = INLINE_SHUTDOWN_TIMEOUT_SEC) -> int:
+    """Give running inline pipelines ``timeout`` seconds to finish, then cancel the rest (they mark their lesson
+    ``failed`` with :data:`CANCELLED_MESSAGE`). Returns the number of cancelled tasks."""
+    pending = [t for t in _BACKGROUND_TASKS if not t.done()]
+    if not pending:
+        return 0
+    log.info("inline_tasks_draining", count=len(pending), timeout_sec=timeout)
+    _, still_running = await asyncio.wait(pending, timeout=timeout)
+    for task in still_running:
+        task.cancel()
+    if still_running:
+        await asyncio.gather(*still_running, return_exceptions=True)
+        log.warning("inline_tasks_cancelled", count=len(still_running))
+    return len(still_running)
+
+
+async def sweep_interrupted_lessons(sessionmaker: async_sessionmaker | None = None) -> int:
+    """Inline mode, at startup: lessons stuck in an intermediate status belong to a dead process → ``failed``."""
+    sm = sessionmaker or get_sessionmaker()
+    async with sm() as session:
+        return await locking.sweep_interrupted_lessons(session)
+
+
 async def run_lesson_pipeline(lesson_id: uuid.UUID, *, sessionmaker: async_sessionmaker | None = None) -> None:
     """Run every stage for ``lesson_id``; never raises (failures end in ``status=failed``)."""
-    await run_lesson_pipeline_result(lesson_id, sessionmaker=sessionmaker)
+    await run_lesson_pipeline_detailed(lesson_id, sessionmaker=sessionmaker)
 
 
 async def run_lesson_pipeline_result(
     lesson_id: uuid.UUID, *, sessionmaker: async_sessionmaker | None = None
-) -> LessonStatus:
-    """Same as :func:`run_lesson_pipeline` but returns the final status (``done`` or ``failed``) for the worker."""
+) -> LessonStatus | None:
+    """Final status (``done`` / ``failed``), or ``None`` when another run already owns the lesson."""
+    return (await run_lesson_pipeline_detailed(lesson_id, sessionmaker=sessionmaker)).status
+
+
+async def run_lesson_pipeline_detailed(
+    lesson_id: uuid.UUID, *, sessionmaker: async_sessionmaker | None = None
+) -> PipelineResult:
+    """Run the pipeline and report status, error type and whether a retry makes sense (for the worker)."""
     sm = sessionmaker or get_sessionmaker()
     settings = get_settings()
     structlog.contextvars.bind_contextvars(lesson_id=str(lesson_id))
@@ -145,7 +214,14 @@ async def run_lesson_pipeline_result(
         lesson = await _load_lesson(sm, lesson_id)
         if lesson is None:
             log.warning("pipeline_lesson_missing")
-            return LessonStatus.failed
+            return PipelineResult(LessonStatus.failed, "LessonMissing", False)
+        async with sm() as session:
+            claimed = await locking.claim_lesson(
+                session, lesson_id, status_message=STAGE_MESSAGES[LessonStatus.probing]
+            )
+        if not claimed:
+            log.info("pipeline_skipped_already_running")
+            return PipelineResult(None)
         center_id = lesson.center_id
         source = Path(lesson.source_path or "")
         language_hints = list(lesson.language_hints or ["ru", "kk"])
@@ -174,16 +250,36 @@ async def run_lesson_pipeline_result(
 
         await _set_status(sm, lesson_id, LessonStatus.done, STAGE_MESSAGES[LessonStatus.done], done=True)
         log.info("pipeline_done", total_ms=int((time.monotonic() - started) * 1000))
-        return LessonStatus.done
+        return PipelineResult(LessonStatus.done)
+    except asyncio.CancelledError:
+        log.warning("pipeline_cancelled", stage=current_stage.value)
+        try:
+            await asyncio.shield(_mark_failed(sm, lesson_id, current_stage, _Cancelled()))
+        except Exception:  # pragma: no cover - last resort, DB unavailable
+            log.exception("pipeline_mark_failed_error")
+        raise
     except Exception as exc:
-        log.exception("pipeline_failed", stage=current_stage.value, error_type=type(exc).__name__)
+        error_type = type(exc).__name__
+        log.exception("pipeline_failed", stage=current_stage.value, error_type=error_type)
         try:
             await _mark_failed(sm, lesson_id, current_stage, exc)
         except Exception:  # pragma: no cover - last resort, DB unavailable
             log.exception("pipeline_mark_failed_error")
-        return LessonStatus.failed
+        return PipelineResult(LessonStatus.failed, error_type, is_retryable(exc))
     finally:
         structlog.contextvars.unbind_contextvars("lesson_id")
+
+
+class _Cancelled(RuntimeError):
+    """Marker exception used to record a cancellation (server stop) in ``lessons.error``."""
+
+    def __str__(self) -> str:
+        return "processing task cancelled on server shutdown"
+
+
+def is_retryable(exc: BaseException) -> bool:
+    """False for deterministic failures (see :data:`NON_RETRYABLE_ERROR_TYPES`), True otherwise."""
+    return not any(cls.__name__ in NON_RETRYABLE_ERROR_TYPES for cls in type(exc).__mro__)
 
 
 # ---------------------------------------------------------------- stage plumbing
@@ -219,19 +315,37 @@ async def _set_status(
         await session.commit()
 
 
+def redact_paths(text: str) -> str:
+    """Hide the server's directory layout (MEDIA_ROOT, repository path) from user-facing error text."""
+    settings = get_settings()
+    for raw, label in ((str(settings.media_root), "<MEDIA_ROOT>"), (str(REPO_DIR), "<APP>")):
+        if raw and raw != "/" and raw in text:
+            text = text.replace(raw, label)
+    return text
+
+
+def _first_line(text: str) -> str:
+    return next((line.strip() for line in text.splitlines() if line.strip()), "")
+
+
 def _failure_message(stage: LessonStatus, exc: BaseException) -> str:
     stage_ru = STAGE_MESSAGES.get(stage, stage.value).lower()
+    if isinstance(exc, _Cancelled):
+        return CANCELLED_MESSAGE
     if isinstance(exc, ProviderNotConfigured):
         return f"Провайдер распознавания речи не настроен: {exc}"
     if isinstance(exc, STTError):
-        return f"Ошибка распознавания речи: {exc}"
+        return f"Ошибка распознавания речи: {redact_paths(str(exc))}"
     if isinstance(exc, MediaError):
-        return f"Не удалось обработать медиафайл (этап: {stage_ru}): {exc}"
+        # Only the first stderr line: ffmpeg/ffprobe output is technical and echoes absolute paths.
+        return f"Не удалось обработать медиафайл (этап: {stage_ru}): {redact_paths(_first_line(str(exc)))}"
     if isinstance(exc, PipelineDependencyMissing):
         return f"Модуль обработки недоступен (этап: {stage_ru}): {exc}"
     if type(exc).__name__ == "ValidationError":
         return f"Ответ модели анализа не прошёл валидацию (этап: {stage_ru})"
-    return f"Ошибка на этапе «{stage_ru}»: {type(exc).__name__}: {exc}"
+    if isinstance(exc, DBAPIError):
+        return f"Ошибка базы данных на этапе «{stage_ru}» — обратитесь к администратору (подробности в поле error)"
+    return f"Ошибка на этапе «{stage_ru}»: {type(exc).__name__}: {redact_paths(str(exc))}"
 
 
 async def _mark_failed(sm: async_sessionmaker, lesson_id: uuid.UUID, stage: LessonStatus, exc: BaseException) -> None:
@@ -241,7 +355,7 @@ async def _mark_failed(sm: async_sessionmaker, lesson_id: uuid.UUID, stage: Less
             return
         lesson.status = LessonStatus.failed
         lesson.status_message = _failure_message(stage, exc)[:_STATUS_MESSAGE_MAX]
-        lesson.error = f"[{stage.value}] {type(exc).__name__}: {exc}"[:_ERROR_MAX_CHARS]
+        lesson.error = redact_paths(f"[{stage.value}] {type(exc).__name__}: {exc}")[:_ERROR_MAX_CHARS]
         await session.commit()
 
 
@@ -249,7 +363,7 @@ async def _mark_failed(sm: async_sessionmaker, lesson_id: uuid.UUID, stage: Less
 
 
 async def _stage_probe(sm: async_sessionmaker, lesson_id: uuid.UUID, source: Path, settings: Settings) -> MediaInfo:
-    await _set_status(sm, lesson_id, LessonStatus.probing, STAGE_MESSAGES[LessonStatus.probing])
+    # status=probing was already written by the claim (locking.claim_lesson)
     if not source.is_file():
         raise MediaError(f"source file not found: {source}")
     info = await asyncio.to_thread(probe_media, source, ffprobe_bin=settings.ffprobe_bin)

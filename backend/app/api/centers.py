@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
-from app.api.deps import CurrentStaff, DbSession, ManagerStaff
+from app.api.deps import CurrentStaff, DbSession, ManagerStaff, is_teacher
 from app.api.lessons import row_to_lesson_dto, staff_lessons_query
 from app.db.models import Analysis, Lesson, LessonStatus
 from app.schemas.api import CenterOut, CenterUpdate, DashboardOut
@@ -39,7 +39,11 @@ async def update_center(body: CenterUpdate, user: ManagerStaff, session: DbSessi
 
 @router.get("/dashboard", response_model=DashboardOut)
 async def dashboard(user: CurrentStaff, session: DbSession) -> DashboardOut:
-    """Centre overview: volumes, share of lessons with checked objectives, needs-review queue, recent lessons."""
+    """Centre overview: volumes, share of lessons with checked objectives, needs-review queue, recent lessons.
+
+    «За последние 7 дней» counts by lesson date (``scheduled_at``), like every other list in the UI — not by
+    upload time. The needs-review indicator is manager-only: teachers get ``null`` / an empty list.
+    """
     base = staff_lessons_query(user)
     visible_ids = select(base.order_by(None).with_only_columns(Lesson.id).subquery().c.id)
 
@@ -49,7 +53,7 @@ async def dashboard(user: CurrentStaff, session: DbSession) -> DashboardOut:
 
     week_ago = datetime.now(UTC) - timedelta(days=7)
     lessons_total = await _count()
-    lessons_last_7 = await _count(Lesson.created_at >= week_ago)
+    lessons_last_7 = await _count(Lesson.scheduled_at >= week_ago)
     lessons_processing = await _count(Lesson.status.in_(PROCESSING_STATUSES))
     lessons_failed = await _count(Lesson.status == LessonStatus.failed)
 
@@ -64,15 +68,19 @@ async def dashboard(user: CurrentStaff, session: DbSession) -> DashboardOut:
     done_total = await _count_analyses()
     checked_total = await _count_analyses(objectives_checked)
     share = (checked_total / done_total) if done_total else None
-    needs_review_count = await _count_analyses(needs_review)
 
     recent_rows = await session.execute(base.order_by(Lesson.created_at.desc()).limit(10))
-    review_rows = await session.execute(
-        base.join(Analysis, Analysis.lesson_id == Lesson.id)
-        .where(Lesson.status == LessonStatus.done, needs_review)
-        .order_by(Lesson.scheduled_at.desc())
-        .limit(10)
-    )
+    needs_review_count: int | None = None
+    review_lessons: list = []
+    if not is_teacher(user):
+        needs_review_count = await _count_analyses(needs_review)
+        review_rows = await session.execute(
+            base.join(Analysis, Analysis.lesson_id == Lesson.id)
+            .where(Lesson.status == LessonStatus.done, needs_review)
+            .order_by(Lesson.scheduled_at.desc())
+            .limit(10)
+        )
+        review_lessons = [row_to_lesson_dto(r) for r in review_rows.all()]
     return DashboardOut(
         lessons_total=lessons_total,
         lessons_last_7_days=lessons_last_7,
@@ -81,5 +89,5 @@ async def dashboard(user: CurrentStaff, session: DbSession) -> DashboardOut:
         share_objectives_checked=round(share, 3) if share is not None else None,
         needs_review_count=needs_review_count,
         recent_lessons=[row_to_lesson_dto(r) for r in recent_rows.all()],
-        needs_review_lessons=[row_to_lesson_dto(r) for r in review_rows.all()],
+        needs_review_lessons=review_lessons,
     )

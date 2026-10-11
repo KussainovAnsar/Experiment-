@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,7 +12,7 @@ from httpx import AsyncClient
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Analysis, Frame, FrameReason, Lesson, LessonStatus, MediaKind
+from app.db.models import Analysis, Frame, FrameReason, Lesson, LessonStatus, MediaKind, Report, ReportKind
 from tests.conftest import CenterCtx, CenterFactory
 
 
@@ -170,7 +170,7 @@ async def test_pipeline_missing_yields_503(
     assert "detail" in resp.json()
 
 
-async def test_media_frame_access_header_and_query_token(
+async def test_media_frame_access_header_and_media_token(
     client: AsyncClient,
     center_factory: CenterFactory,
     db_session: AsyncSession,
@@ -179,6 +179,8 @@ async def test_media_frame_access_header_and_query_token(
     make_parent,
     media_root: Path,
 ) -> None:
+    """Media routes: session JWT in the header, or a lesson-scoped media token in ``?access_token=`` — never a
+    session token in the URL (it would leak into proxy logs / browser history)."""
     from app.services.storage import frames_dir
 
     a = await center_factory(name="Центр А")
@@ -189,16 +191,19 @@ async def test_media_frame_access_header_and_query_token(
     parent = await make_parent(a.headers, [student["id"]])
     stranger = await make_parent(a.headers, [other_student["id"]], full_name="Чужой Родитель")
 
-    lesson = Lesson(
-        center_id=a.center_id,
-        teacher_id=uuid.UUID(teacher["id"]),
-        student_id=uuid.UUID(student["id"]),
-        scheduled_at=datetime.now(UTC),
-        media_kind=MediaKind.video,
-        status=LessonStatus.done,
-        consent_confirmed=True,
-    )
-    db_session.add(lesson)
+    def _lesson() -> Lesson:
+        return Lesson(
+            center_id=a.center_id,
+            teacher_id=uuid.UUID(teacher["id"]),
+            student_id=uuid.UUID(student["id"]),
+            scheduled_at=datetime.now(UTC),
+            media_kind=MediaKind.video,
+            status=LessonStatus.done,
+            consent_confirmed=True,
+        )
+
+    lesson, other_lesson = _lesson(), _lesson()
+    db_session.add_all([lesson, other_lesson])
     await db_session.flush()
     frame_path = frames_dir(a.center_id, lesson.id) / "0000.jpg"
     Image.new("RGB", (32, 24), color=(200, 30, 30)).save(frame_path, "JPEG")
@@ -212,6 +217,26 @@ async def test_media_frame_access_header_and_query_token(
         reason=FrameReason.scene,
     )
     db_session.add(frame)
+    # a parent report + an analysis that points at frame 0, so the parent lesson page lists it
+    db_session.add(
+        Report(
+            lesson_id=lesson.id,
+            kind=ReportKind.parent,
+            data={"topic_plain": "Тема", "what_to_repeat": [], "encouragement": "Молодец!"},
+            markdown="# Отчёт",
+            version=1,
+        )
+    )
+    db_session.add(
+        Analysis(
+            lesson_id=lesson.id,
+            provider="mock",
+            data={
+                "errors": [{"frame_ids": [0], "description": "Ошибка в окончании"}],
+                "visual_observations": [{"frame_id": 0, "relevance": "high", "issue": "«в школе» вместо «в школу»"}],
+            },
+        )
+    )
     await db_session.commit()
 
     frames = await client.get(f"/api/lessons/{lesson.id}/frames", headers=a.headers)
@@ -223,9 +248,22 @@ async def test_media_frame_access_header_and_query_token(
     assert (await client.get(url)).status_code == 401
     ok = await client.get(url, headers=a.headers)
     assert ok.status_code == 200 and ok.headers["content-type"] == "image/jpeg"
-    via_query = await client.get(url, params={"access_token": a.token})
-    assert via_query.status_code == 200 and via_query.content == ok.content
+    # a staff session JWT in the query string is NOT accepted
+    assert (await client.get(url, params={"access_token": a.token})).status_code == 401
     assert (await client.get(url, headers=b.headers)).status_code == 404
+
+    token_resp = await client.get(f"/api/lessons/{lesson.id}/media-token", headers=a.headers)
+    assert token_resp.status_code == 200, token_resp.text
+    media_token = token_resp.json()["access_token"]
+    assert token_resp.json()["lesson_id"] == str(lesson.id)
+    via_query = await client.get(url, params={"access_token": media_token})
+    assert via_query.status_code == 200 and via_query.content == ok.content
+    source = await client.get(f"/api/media/lessons/{lesson.id}/source", params={"access_token": media_token})
+    assert source.status_code == 404  # scoped correctly; the lesson simply has no source file
+    # the token is scoped to its lesson: another lesson's media is not visible with it
+    other_token = (await client.get(f"/api/lessons/{other_lesson.id}/media-token", headers=a.headers)).json()
+    assert (await client.get(url, params={"access_token": other_token["access_token"]})).status_code == 404
+    assert (await client.get(f"/api/lessons/{lesson.id}/media-token", headers=b.headers)).status_code == 404
 
     async def parent_token(p: dict) -> str:
         link = await client.post(f"/api/parents/{p['id']}/magic-link", headers=a.headers)
@@ -233,12 +271,110 @@ async def test_media_frame_access_header_and_query_token(
         return (await client.post("/api/parent/auth/exchange", json={"token": token})).json()["access_token"]
 
     linked = await parent_token(parent)
-    assert (await client.get(url, params={"access_token": linked})).status_code == 200
+    headers = {"Authorization": f"Bearer {linked}"}
+    assert (await client.get(url, headers=headers)).status_code == 200
+    assert (await client.get(url, params={"access_token": linked})).status_code == 401  # parent JWT not in URLs
+    report = await client.get(f"/api/parent/students/{student['id']}/lessons/{lesson.id}", headers=headers)
+    assert report.status_code == 200, report.text
+    body = report.json()
+    assert [f["index"] for f in body["frames"]] == [0]
+    assert body["frames"][0]["caption"] == "«в школе» вместо «в школу»"
+    parent_media = body["media_token"]
+    assert parent_media
+    assert (await client.get(url, params={"access_token": parent_media})).status_code == 200
     assert (
-        await client.get(f"/api/media/lessons/{lesson.id}/source", params={"access_token": linked})
+        await client.get(f"/api/media/lessons/{lesson.id}/source", params={"access_token": parent_media})
     ).status_code == 403
     unlinked = await parent_token(stranger)
-    assert (await client.get(url, params={"access_token": unlinked})).status_code == 404
+    stranger_headers = {"Authorization": f"Bearer {unlinked}"}
+    assert (await client.get(url, headers=stranger_headers)).status_code == 404
+    report_url = f"/api/parent/students/{student['id']}/lessons/{lesson.id}"
+    assert (await client.get(report_url, headers=stranger_headers)).status_code == 404
+
+
+async def test_teacher_does_not_get_manager_indicators(
+    client: AsyncClient, center: CenterCtx, db_session: AsyncSession, make_student, make_teacher, make_teacher_staff
+) -> None:
+    """CONTRACT §6: teacher = «без manager-отчёта» — also through /analysis and /dashboard."""
+    student = await make_student(center.headers)
+    teacher = await make_teacher(center.headers)
+    lesson = Lesson(
+        center_id=center.center_id,
+        teacher_id=uuid.UUID(teacher["id"]),
+        student_id=uuid.UUID(student["id"]),
+        scheduled_at=datetime.now(UTC),
+        media_kind=MediaKind.video,
+        status=LessonStatus.done,
+        consent_confirmed=True,
+    )
+    db_session.add(lesson)
+    await db_session.flush()
+    db_session.add(
+        Analysis(
+            lesson_id=lesson.id,
+            provider="mock",
+            data={"topic": "Тест", "manager_indicators": {"objectives_checked": True, "needs_methodist_review": True}},
+        )
+    )
+    await db_session.commit()
+    _, token = await make_teacher_staff(center.center_id, uuid.UUID(teacher["id"]))
+    headers = {"Authorization": f"Bearer {token}"}
+
+    owner_view = await client.get(f"/api/lessons/{lesson.id}/analysis", headers=center.headers)
+    assert owner_view.json()["data"]["manager_indicators"]["needs_methodist_review"] is True
+    teacher_view = await client.get(f"/api/lessons/{lesson.id}/analysis", headers=headers)
+    assert teacher_view.status_code == 200
+    assert teacher_view.json()["data"]["manager_indicators"] is None
+    assert teacher_view.json()["data"]["topic"] == "Тест"
+
+    owner_dash = (await client.get("/api/dashboard", headers=center.headers)).json()
+    assert owner_dash["needs_review_count"] == 1 and len(owner_dash["needs_review_lessons"]) == 1
+    teacher_dash = (await client.get("/api/dashboard", headers=headers)).json()
+    assert teacher_dash["needs_review_count"] is None and teacher_dash["needs_review_lessons"] == []
+    assert teacher_dash["lessons_total"] == 1
+
+
+async def test_reprocess_gate_rejects_active_but_allows_stale(
+    client: AsyncClient,
+    center: CenterCtx,
+    db_session: AsyncSession,
+    make_student,
+    make_teacher,
+    tiny_wav: Path,
+    no_pipeline,
+) -> None:
+    from sqlalchemy import update
+
+    from app.services.storage import source_path
+
+    student = await make_student(center.headers)
+    teacher = await make_teacher(center.headers)
+    lesson = Lesson(
+        center_id=center.center_id,
+        teacher_id=uuid.UUID(teacher["id"]),
+        student_id=uuid.UUID(student["id"]),
+        scheduled_at=datetime.now(UTC),
+        media_kind=MediaKind.audio,
+        status=LessonStatus.analyzing,
+        consent_confirmed=True,
+    )
+    db_session.add(lesson)
+    await db_session.flush()
+    src = source_path(center.center_id, lesson.id, "lesson.wav")
+    src.write_bytes(tiny_wav.read_bytes())
+    lesson.source_path = str(src)
+    await db_session.commit()
+
+    busy = await client.post(f"/api/lessons/{lesson.id}/reprocess", headers=center.headers)
+    assert busy.status_code == 409  # a fresh intermediate status: another run owns the lesson
+
+    await db_session.execute(
+        update(Lesson).where(Lesson.id == lesson.id).values(updated_at=datetime.now(UTC) - timedelta(hours=2))
+    )
+    await db_session.commit()
+    stale = await client.post(f"/api/lessons/{lesson.id}/reprocess", headers=center.headers)
+    assert stale.status_code == 200, stale.text  # abandoned run (updated_at is old): may be restarted
+    assert stale.json()["status"] == "uploaded"
 
 
 async def test_dashboard_metrics(
@@ -262,7 +398,9 @@ async def test_dashboard_metrics(
     done_unchecked = _lesson(LessonStatus.done)
     processing = _lesson(LessonStatus.transcribing)
     failed = _lesson(LessonStatus.failed)
-    db_session.add_all([done_checked, done_unchecked, processing, failed])
+    old_recording = _lesson(LessonStatus.done)
+    old_recording.scheduled_at = datetime.now(UTC) - timedelta(days=30)  # uploaded today, taught a month ago
+    db_session.add_all([done_checked, done_unchecked, processing, failed, old_recording])
     await db_session.flush()
 
     def _analysis(lesson: Lesson, checked: bool, review: bool) -> Analysis:
@@ -278,12 +416,12 @@ async def test_dashboard_metrics(
     resp = await client.get("/api/dashboard", headers=center.headers)
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["lessons_total"] == 4
-    assert body["lessons_last_7_days"] == 4
+    assert body["lessons_total"] == 5
+    assert body["lessons_last_7_days"] == 4  # «За последние 7 дней» = by lesson date, not by upload time
     assert body["lessons_processing"] == 1  # only "transcribing"; failed is terminal
     assert body["lessons_failed"] == 1
     assert body["share_objectives_checked"] == 0.5
     assert body["needs_review_count"] == 1
-    assert len(body["recent_lessons"]) == 4
+    assert len(body["recent_lessons"]) == 5
     assert [item["id"] for item in body["needs_review_lessons"]] == [str(done_unchecked.id)]
     assert body["recent_lessons"][0]["has_analysis"] in (True, False)

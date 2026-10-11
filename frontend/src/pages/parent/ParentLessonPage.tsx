@@ -1,6 +1,7 @@
 /** /parent/students/:id/lessons/:lessonId — full parent report. */
 import { useParams } from "react-router-dom";
 import { useParentLesson } from "@/api/queries";
+import { MediaTokenContext } from "@/auth/media";
 import { ParentReportView } from "@/components/ParentReportView";
 import { BackLink, ErrorState, Skeleton } from "@/components/ui";
 
@@ -14,7 +15,9 @@ export function ParentLessonPage() {
         {q.isLoading && <Skeleton lines={8} />}
         {q.isError && <ErrorState error={q.error} onRetry={() => void q.refetch()} />}
         {q.data && (
-          <ParentReportView data={q.data.data} frames={q.data.frames} realm="parent" teacherName={q.data.teacher_name} scheduledAt={q.data.scheduled_at} />
+          <MediaTokenContext.Provider value={q.data.media_token ?? null}>
+            <ParentReportView data={q.data.data} frames={q.data.frames} teacherName={q.data.teacher_name} scheduledAt={q.data.scheduled_at} />
+          </MediaTokenContext.Provider>
         )}
       </div>
     </>

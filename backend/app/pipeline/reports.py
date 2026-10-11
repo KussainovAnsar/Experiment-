@@ -146,26 +146,49 @@ def _clean(text: str | None) -> str:
 # ---------------------------------------------------------------- teacher
 
 
-def _find_re_explanation(error: StudentError, timeline: Sequence[TeachingEvent]) -> TeachingEvent | None:
-    candidates = [
-        ev
-        for ev in timeline
-        if ev.kind == "re_explanation" and error.timestamp <= ev.start <= error.timestamp + RE_EXPLANATION_WINDOW_SEC
-    ]
-    return min(candidates, key=lambda ev: ev.start) if candidates else None
+def _find_re_explanation(
+    error: StudentError, errors: Sequence[StudentError], timeline: Sequence[TeachingEvent]
+) -> TeachingEvent | None:
+    """The re-explanation that answers ``error``, if any.
+
+    ``TeachingEvent`` carries no ``skill_key``, so skill is inferred from order: a ``re_explanation`` within
+    :data:`RE_EXPLANATION_WINDOW_SEC` after the error is attributed to it only when no error of a *different*
+    skill happened in between — otherwise the teacher was re-explaining that later error.
+    """
+    candidates = sorted(
+        (
+            ev
+            for ev in timeline
+            if ev.kind == "re_explanation"
+            and error.timestamp <= ev.start <= error.timestamp + RE_EXPLANATION_WINDOW_SEC
+        ),
+        key=lambda ev: ev.start,
+    )
+    for ev in candidates:
+        intervening = any(
+            error.timestamp < other.timestamp <= ev.start and other.skill_key != error.skill_key for other in errors
+        )
+        if not intervening:
+            return ev
+    return None
 
 
 def build_episodes(a: LessonAnalysis, ctx: ReportContext) -> list[dict]:
-    """Chronological error episodes: error → re-explanation? → repeated? → corrected?"""
+    """Chronological error episodes: error → re-explanation? → repeated after it? → corrected?
+
+    ``repeated_at`` is the next error of the same skill **after** the attributed re-explanation; without a
+    re-explanation no repeat is claimed (``repeated`` then only reflects the LLM's ``repeated_after_explanation``).
+    """
     errors = sorted(a.errors, key=lambda e: e.timestamp)
     episodes: list[dict] = []
     for i, err in enumerate(errors):
         later_same = [e for e in errors[i + 1 :] if e.skill_key == err.skill_key]
-        re_expl = _find_re_explanation(err, a.timeline)
-        repeated_at = later_same[0].timestamp if later_same else None
-        repeated = bool(err.repeated_after_explanation) or (
-            re_expl is not None and repeated_at is not None and repeated_at > re_expl.start
-        )
+        re_expl = _find_re_explanation(err, errors, a.timeline)
+        repeated_at: float | None = None
+        if re_expl is not None:
+            after = [e for e in later_same if e.timestamp > re_expl.start]
+            repeated_at = after[0].timestamp if after else None
+        repeated = bool(err.repeated_after_explanation) or repeated_at is not None
         episodes.append(
             {
                 "timestamp": err.timestamp,

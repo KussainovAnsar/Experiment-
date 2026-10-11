@@ -36,27 +36,38 @@ export function DashboardPage() {
               value={formatPercent(q.data.share_objectives_checked)}
               hint="Доля уроков, где преподаватель проверил достижение целей"
             />
-            <Stat
-              label="Требуют разбора методиста"
-              value={q.data.needs_review_count}
-              tone={q.data.needs_review_count > 0 ? "warn" : undefined}
-              hint={q.data.lessons_processing > 0 ? `В обработке сейчас: ${q.data.lessons_processing}` : undefined}
-            />
-          </div>
-
-          <div className="card mt-4">
-            <div className="card-title">
-              <h2>Требуют внимания</h2>
-              <span className="small muted">Уроки с пометкой «нужен разбор методиста»</span>
-            </div>
-            {q.data.needs_review_lessons.length === 0 ? (
-              <EmptyState title="Пока ничего не требует разбора" text="Когда анализ отметит урок как требующий внимания, он появится здесь." />
+            {q.data.needs_review_count === null ? (
+              <Stat
+                label="В обработке сейчас"
+                value={q.data.lessons_processing}
+                hint={q.data.lessons_failed ? `С ошибкой: ${q.data.lessons_failed}` : undefined}
+              />
             ) : (
-              <LessonTable lessons={q.data.needs_review_lessons} />
+              <Stat
+                label="Требуют разбора методиста"
+                value={q.data.needs_review_count}
+                tone={q.data.needs_review_count > 0 ? "warn" : undefined}
+                hint={q.data.lessons_processing > 0 ? `В обработке сейчас: ${q.data.lessons_processing}` : undefined}
+              />
             )}
           </div>
 
-          <div className="card">
+          {/* The methodist-review queue is manager-only: the API returns null for teachers (CONTRACT §6). */}
+          {q.data.needs_review_count !== null && (
+            <div className="card mt-4">
+              <div className="card-title">
+                <h2>Требуют внимания</h2>
+                <span className="small muted">Уроки с пометкой «нужен разбор методиста»</span>
+              </div>
+              {q.data.needs_review_lessons.length === 0 ? (
+                <EmptyState title="Пока ничего не требует разбора" text="Когда анализ отметит урок как требующий внимания, он появится здесь." />
+              ) : (
+                <LessonTable lessons={q.data.needs_review_lessons} />
+              )}
+            </div>
+          )}
+
+          <div className={`card${q.data.needs_review_count === null ? " mt-4" : ""}`}>
             <div className="card-title">
               <h2>Последние уроки</h2>
               <Link to="/lessons" className="small">

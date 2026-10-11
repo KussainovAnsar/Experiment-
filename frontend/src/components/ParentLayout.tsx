@@ -11,8 +11,8 @@ export function ParentLayout() {
         <Link to="/parent" style={{ color: "inherit" }}>
           <Brand sub="кабинет родителя" />
         </Link>
-        <Link to="/parent/settings" className="small" aria-label="Настройки">
-          {parent?.full_name ? parent.full_name.split(" ")[0] : "Настройки"} ⚙
+        <Link to="/parent/settings" className="small parent-settings-link" aria-label="Настройки">
+          {parent?.full_name ? parent.full_name.split(" ")[0] : "Настройки"} <span aria-hidden="true">⚙</span>
         </Link>
       </header>
       <main className="parent-main">

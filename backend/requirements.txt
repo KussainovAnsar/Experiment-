@@ -22,3 +22,5 @@ anthropic>=1.13
 openai>=3.0
 # Module C (Telegram bot, messaging)
 aiogram>=3.13
+# Integrator (e2e smoke, backend/tests/e2e)
+playwright==1.56.0

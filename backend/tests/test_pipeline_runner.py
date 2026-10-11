@@ -345,3 +345,145 @@ async def test_enqueue_worker_mode_creates_job_and_worker_runs_it(
         async with sm() as session:
             await session.execute(delete(Job).where(Job.id == job.id))
             await session.commit()
+
+
+async def test_concurrent_runs_only_one_claims_the_lesson(
+    sm: async_sessionmaker[AsyncSession], center: Center, media_file: Path, stub_hooks: dict[str, list]
+) -> None:
+    lesson = await _make_lesson(sm, center, media_file)
+    results = await asyncio.gather(
+        run_lesson_pipeline_result(lesson.id, sessionmaker=sm), run_lesson_pipeline_result(lesson.id, sessionmaker=sm)
+    )
+    assert sorted(results, key=lambda r: r is None) == [LessonStatus.done, None]
+    assert stub_hooks["analyze"] and len(stub_hooks["analyze"]) == 1  # the loser touched nothing
+    async with sm() as session:
+        fresh = await session.get(Lesson, lesson.id)
+        assert fresh is not None and fresh.status == LessonStatus.done
+
+
+async def test_failure_text_redacts_server_paths(
+    sm: async_sessionmaker[AsyncSession], center: Center, stub_hooks: dict[str, list]
+) -> None:
+    lesson = await _make_lesson(sm, center, None)
+    result = await runner.run_lesson_pipeline_detailed(lesson.id, sessionmaker=sm)
+    assert result.status == LessonStatus.failed and result.error_type == "MediaError" and result.retryable is False
+    media_root = str(get_settings().media_root)
+    async with sm() as session:
+        fresh = await session.get(Lesson, lesson.id)
+        assert fresh is not None and fresh.error and fresh.status_message
+        assert media_root not in fresh.error and media_root not in fresh.status_message
+        assert "<MEDIA_ROOT>" in fresh.error
+
+
+def test_retryable_classification() -> None:
+    from pydantic import ValidationError
+    from sqlalchemy.exc import DBAPIError
+
+    from app.pipeline.media import MediaError
+    from app.providers.stt.base import STTError
+
+    assert runner.is_retryable(STTError("timeout")) is True
+    assert runner.is_retryable(ConnectionError("reset")) is True
+    assert runner.is_retryable(MediaError("no audio")) is False
+    assert runner.is_retryable(runner.PipelineDependencyMissing("x")) is False
+    assert runner.is_retryable(DBAPIError("INSERT", {}, Exception("too long"))) is False
+    try:
+        LessonStatus("nope")
+    except ValueError as exc:
+        assert runner.is_retryable(exc) is True
+    assert all(name in runner.NON_RETRYABLE_ERROR_TYPES for name in ("ValidationError", "MediaError"))
+    assert ValidationError.__name__ in runner.NON_RETRYABLE_ERROR_TYPES
+
+
+async def test_worker_does_not_retry_deterministic_failures(
+    sm: async_sessionmaker[AsyncSession], center: Center, stub_hooks: dict[str, list]
+) -> None:
+    from app.pipeline import jobs
+    from app.pipeline.runner import run_lesson_pipeline_detailed  # noqa: F401 - imported by the worker
+
+    lesson = await _make_lesson(sm, center, None)  # missing source → MediaError every time
+    async with sm() as session:
+        job = await jobs.enqueue(session, jobs.KIND_PROCESS_LESSON, {"lesson_id": str(lesson.id)})
+        await session.commit()
+    try:
+        assert await run_once(worker_id="test-worker", sessionmaker=sm) is True
+        async with sm() as session:
+            fresh_job = await session.get(Job, job.id)
+            assert fresh_job is not None
+            assert fresh_job.status.value == "failed" and fresh_job.attempts == 1  # no 30 s / 60 s re-runs
+            assert fresh_job.error and "MediaError" in fresh_job.error
+    finally:
+        async with sm() as session:
+            await session.execute(delete(Job).where(Job.id == job.id))
+            await session.commit()
+
+
+async def test_worker_mode_dedupes_queued_jobs(
+    sm: async_sessionmaker[AsyncSession], center: Center, media_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(runner, "get_settings", lambda: get_settings().model_copy(update={"pipeline_mode": "worker"}))
+    lesson = await _make_lesson(sm, center, media_file)
+    try:
+        async with sm() as session:
+            await enqueue_lesson_processing(session, lesson.id)
+            await enqueue_lesson_processing(session, lesson.id)  # double click / retry
+            await session.commit()
+            stmt = select(Job).where(Job.payload["lesson_id"].astext == str(lesson.id))
+            assert len(list((await session.execute(stmt)).scalars())) == 1
+    finally:
+        async with sm() as session:
+            await session.execute(delete(Job).where(Job.payload["lesson_id"].astext == str(lesson.id)))
+            await session.commit()
+
+
+async def test_sweep_marks_interrupted_lessons_failed(
+    sm: async_sessionmaker[AsyncSession], center: Center, media_file: Path
+) -> None:
+    from app.pipeline.locking import INTERRUPTED_MESSAGE
+
+    stuck = await _make_lesson(sm, center, media_file)
+    finished = await _make_lesson(sm, center, media_file)
+    async with sm() as session:
+        (await session.get(Lesson, stuck.id)).status = LessonStatus.analyzing  # type: ignore[union-attr]
+        (await session.get(Lesson, finished.id)).status = LessonStatus.done  # type: ignore[union-attr]
+        await session.commit()
+    swept = await runner.sweep_interrupted_lessons(sm)
+    assert swept >= 1
+    async with sm() as session:
+        a, b = await session.get(Lesson, stuck.id), await session.get(Lesson, finished.id)
+        assert a is not None and a.status == LessonStatus.failed and a.status_message == INTERRUPTED_MESSAGE
+        assert b is not None and b.status == LessonStatus.done
+
+
+async def test_shutdown_cancels_inline_task_and_marks_lesson_failed(
+    sm: async_sessionmaker[AsyncSession],
+    center: Center,
+    media_file: Path,
+    stub_hooks: dict[str, list],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def slow_analyze(session: AsyncSession, lesson: Lesson) -> Analysis:
+        await asyncio.sleep(30)
+        raise AssertionError("unreachable")
+
+    monkeypatch.setitem(runner.HOOK_OVERRIDES, "analyze_lesson", slow_analyze)
+    monkeypatch.setattr(runner, "get_settings", lambda: get_settings().model_copy(update={"pipeline_mode": "inline"}))
+    monkeypatch.setattr(runner, "get_sessionmaker", lambda: sm)
+    lesson = await _make_lesson(sm, center, media_file)
+    async with sm() as session:
+        await enqueue_lesson_processing(session, lesson.id)
+        await session.commit()
+    for _ in range(300):
+        await asyncio.sleep(0.1)
+        async with sm() as session:
+            fresh = await session.get(Lesson, lesson.id)
+            assert fresh is not None
+            if fresh.status == LessonStatus.analyzing:
+                break
+    assert fresh.status == LessonStatus.analyzing
+    cancelled = await runner.shutdown_inline_tasks(timeout=0.2)
+    assert cancelled == 1
+    async with sm() as session:
+        fresh = await session.get(Lesson, lesson.id)
+        assert fresh is not None and fresh.status == LessonStatus.failed
+        assert fresh.status_message == runner.CANCELLED_MESSAGE

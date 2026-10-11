@@ -161,9 +161,7 @@ def share_badge(draw: ImageDraw.ImageDraw, label: str = "Вы смотрите �
 def thumbnail_tiles(draw: ImageDraw.ImageDraw) -> None:
     """Small participant thumbnails in the top-right corner (avatars only, no faces)."""
     x0, y0, w, h = WIDTH - 250, 30, 110, 72
-    for i, (name, initials, col) in enumerate(
-        [("Айгерим С.", "АС", "#0ea5e9"), ("Данияр", "Д", "#f59e0b")]
-    ):
+    for i, (name, initials, col) in enumerate([("Айгерим С.", "АС", "#0ea5e9"), ("Данияр", "Д", "#f59e0b")]):
         x = x0 + i * (w + 10)
         draw.rounded_rectangle((x, y0, x + w, y0 + h), radius=8, fill=ZOOM_TILE)
         cx, cy, r = x + w // 2, y0 + 28, 18
@@ -217,14 +215,22 @@ def frame_00_zoom_layout() -> Image.Image:
     tile_w, tile_h, gap = 580, 420, 40
     x = (WIDTH - (tile_w * 2 + gap)) // 2
     for name, initials, col, speaking in tiles:
-        d.rounded_rectangle((x, 90, x + tile_w, 90 + tile_h), radius=14, fill=ZOOM_TILE,
-                            outline="#22c55e" if speaking else ZOOM_TILE, width=4)
+        d.rounded_rectangle(
+            (x, 90, x + tile_w, 90 + tile_h),
+            radius=14,
+            fill=ZOOM_TILE,
+            outline="#22c55e" if speaking else ZOOM_TILE,
+            width=4,
+        )
         cx, cy, r = x + tile_w // 2, 90 + tile_h // 2 - 20, 90
         d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=col)
         f = font(64, bold=True)
         d.text((cx - text_width(d, initials, f) // 2, cy - 40), initials, font=f, fill=WHITE)
-        d.rounded_rectangle((x + 16, 90 + tile_h - 54, x + 16 + text_width(d, name, font(22)) + 40, 90 + tile_h - 16),
-                            radius=8, fill="#111114")
+        d.rounded_rectangle(
+            (x + 16, 90 + tile_h - 54, x + 16 + text_width(d, name, font(22)) + 40, 90 + tile_h - 16),
+            radius=8,
+            fill="#111114",
+        )
         d.text((x + 28, 90 + tile_h - 48), name, font=font(22), fill=WHITE)
         d.text((x + tile_w - 60, 90 + tile_h - 48), "●", font=font(22), fill="#22c55e")
         x += tile_w + gap
@@ -277,17 +283,24 @@ def frame_02_table() -> Image.Image:
     col_x = [48, 250, 480, 660, 920, 1090]
     y = y0 + 28
     d.rectangle((48, y, WIDTH - 40, y + 46), fill="#e0e7ff")
-    for h, x in zip(headers, col_x):
+    for h, x in zip(headers, col_x, strict=True):
         d.text((x + 10, y + 11), h, font=font(19, bold=True), fill=BLUE)
     rows = [
         ("Дательный", "кому? чему?", "мам-Е", "брат-У, стол-У", "дочер-И", "-ға/-ге\n-қа/-ке"),
-        ("Предложный", "о ком? о чём?\nгде? (в, на, о)", "о мам-Е", "о брат-Е, на стол-Е", "о дочер-И", "-да/-де\n-та/-те"),
+        (
+            "Предложный",
+            "о ком? о чём?\nгде? (в, на, о)",
+            "о мам-Е",
+            "о брат-Е, на стол-Е",
+            "о дочер-И",
+            "-да/-де\n-та/-те",
+        ),
     ]
     y += 46
     for r_i, row in enumerate(rows):
         h = 150
         d.rectangle((48, y, WIDTH - 40, y + h), fill=WHITE if r_i % 2 == 0 else PAPER, outline="#c7d2fe")
-        for c_i, (cell, x) in enumerate(zip(row, col_x)):
+        for c_i, (cell, x) in enumerate(zip(row, col_x, strict=True)):
             fnt = font(24, bold=True) if c_i == 0 else font(22)
             fill = INK
             if c_i in (2, 3, 4):
@@ -318,10 +331,24 @@ def frame_03_where_vs_whereto() -> Image.Image:
     d.text((64, 118), "Самая частая путаница: направление (куда?) и место (где?)", font=font(24), fill=MUTED)
     thumbnail_tiles(d)
     cols = [
-        (64, "КУДА?", "винительный падеж", GREEN, GREEN_SOFT,
-         ["иду  в школУ", "идём  на почтУ", "ходили  в библиотекУ"], "мектепКЕ  ·  поштаҒА  ·  кітапханаҒА"),
-        (664, "ГДЕ?", "предложный падеж", ORANGE, ORANGE_SOFT,
-         ["учусь  в школЕ", "работаю  на почтЕ", "сидим  в библиотекЕ"], "мектепТЕ  ·  поштаДА  ·  кітапханаДА"),
+        (
+            64,
+            "КУДА?",
+            "винительный падеж",
+            GREEN,
+            GREEN_SOFT,
+            ["иду  в школУ", "идём  на почтУ", "ходили  в библиотекУ"],
+            "мектепКЕ  ·  поштаҒА  ·  кітапханаҒА",
+        ),
+        (
+            664,
+            "ГДЕ?",
+            "предложный падеж",
+            ORANGE,
+            ORANGE_SOFT,
+            ["учусь  в школЕ", "работаю  на почтЕ", "сидим  в библиотекЕ"],
+            "мектепТЕ  ·  поштаДА  ·  кітапханаДА",
+        ),
     ]
     for x, q, case, col, soft, examples, kazakh in cols:
         d.rounded_rectangle((x, 170, x + 552, 650), radius=18, fill=soft)
@@ -342,8 +369,9 @@ def frame_03_where_vs_whereto() -> Image.Image:
 def frame_04_exercise_2() -> Image.Image:
     img, d = new_slide(WHITE)
     share_badge(d)
-    header_band(d, "Упражнение 2. Поставь слово в нужный падеж", PURPLE,
-                subtitle="Устно: задай вопрос и назови окончание")
+    header_band(
+        d, "Упражнение 2. Поставь слово в нужный падеж", PURPLE, subtitle="Устно: задай вопрос и назови окончание"
+    )
     d.rectangle((0, 0, WIDTH, 22), fill="#16a34a")
     items = [
         "Я подарил цветы (мама) ______ .",
@@ -421,18 +449,32 @@ def frame_07_exercise_3_typed() -> Image.Image:
     answers = ["в школу", "в деревне", "бабушке", "о поездке", "в Астане", ""]
     marks = ["✓", "✓", "✓", "✓", "?", ""]
     yy = y + 90
-    for i, (item, ans, mark) in enumerate(zip(EXERCISE_3, answers, marks), 1):
+    for i, (item, ans, mark) in enumerate(zip(EXERCISE_3, answers, marks, strict=True), 1):
         base = item.replace(" ______ .", "")
         d.text((72, yy), f"{i}. {base}", font=font(22), fill=INK)
         if ans:
             ax = 72 + text_width(d, f"{i}. {base} ", font(22))
             if mark == "?":
-                d.rectangle((ax - 4, yy - 2, ax + text_width(d, ans, font(22, bold=True)) + 4, yy + 28), fill=YELLOW_SOFT)
+                d.rectangle(
+                    (ax - 4, yy - 2, ax + text_width(d, ans, font(22, bold=True)) + 4, yy + 28), fill=YELLOW_SOFT
+                )
             d.text((ax, yy), ans, font=font(22, bold=True), fill=MARKER_BLUE)
-            d.text((ax + text_width(d, ans, font(22, bold=True)) + 14, yy - 2), mark,
-                   font=font(24, bold=True), fill=GREEN if mark == "✓" else ORANGE)
+            d.text(
+                (ax + text_width(d, ans, font(22, bold=True)) + 14, yy - 2),
+                mark,
+                font=font(24, bold=True),
+                fill=GREEN if mark == "✓" else ORANGE,
+            )
         else:
-            d.rectangle((72 + text_width(d, f"{i}. {base} ", font(22)), yy + 2, 72 + text_width(d, f"{i}. {base} ", font(22)) + 3, yy + 26), fill=INK)
+            d.rectangle(
+                (
+                    72 + text_width(d, f"{i}. {base} ", font(22)),
+                    yy + 2,
+                    72 + text_width(d, f"{i}. {base} ", font(22)) + 3,
+                    yy + 26,
+                ),
+                fill=INK,
+            )
         yy += 64
     # comments panel (structurally different from the blank version)
     d.rectangle((900, y + 20, WIDTH, HEIGHT), fill="#f3f4f6")
@@ -441,8 +483,9 @@ def frame_07_exercise_3_typed() -> Image.Image:
     d.ellipse((940, y + 100, 972, y + 132), fill="#0ea5e9")
     d.text((948, y + 106), "АС", font=font(14, bold=True), fill=WHITE)
     d.text((984, y + 104), "Айгерим С.", font=font(16, bold=True), fill=INK)
-    draw_paragraph(d, (940, y + 144), "№5: задай вопрос — куда? или где? Поедем … куда?", font(18),
-                   max_width=WIDTH - 24 - 956)
+    draw_paragraph(
+        d, (940, y + 144), "№5: задай вопрос — куда? или где? Поедем … куда?", font(18), max_width=WIDTH - 24 - 956
+    )
     d.rounded_rectangle((924, y + 250, WIDTH - 24, y + 330), radius=10, fill=WHITE, outline="#d1d5db")
     d.text((940, y + 266), "Решено самостоятельно: 4 из 6", font=font(17), fill=GREEN)
     d.text((940, y + 294), "С подсказкой: №5, №6", font=font(17), fill=ORANGE)
@@ -462,7 +505,7 @@ def frame_08_tsya_mistake() -> Image.Image:
     # typing cursor after the last sentence
     cx = 160 + text_width(d, "2. Мой брат учится в университете.", f) + 6
     d.rectangle((cx, y + 262, cx + 3, y + 304), fill=INK)
-    d.text((160, y + 380), "Напечатано учеником · 27:05", font=font(18), fill=MUTED)
+    d.text((160, y + 380), "Напечатано учеником · 26:30", font=font(18), fill=MUTED)
     return img
 
 
@@ -477,10 +520,19 @@ def frame_09_tsya_fixed() -> Image.Image:
     x_word = 160 + text_width(d, "1. Данияр хочет ", f)
     w_word = text_width(d, "учиться", f)
     d.line((x_word, y + 170, x_word + w_word, y + 170), fill=GREEN, width=5)
-    d.text((160 + text_width(d, "1. Данияр хочет учиться в Алматы.", f) + 24, y + 122), "✓", font=font(44, bold=True), fill=GREEN)
+    d.text(
+        (160 + text_width(d, "1. Данияр хочет учиться в Алматы.", f) + 24, y + 122),
+        "✓",
+        font=font(44, bold=True),
+        fill=GREEN,
+    )
     d.text((160, y + 210), "2. Мой брат учится в университете.", font=f, fill=MARKER_BLUE)
-    d.text((160 + text_width(d, "2. Мой брат учится в университете.", f) + 24, y + 212), "✓",
-           font=font(44, bold=True), fill=GREEN)
+    d.text(
+        (160 + text_width(d, "2. Мой брат учится в университете.", f) + 24, y + 212),
+        "✓",
+        font=font(44, bold=True),
+        fill=GREEN,
+    )
     # rule box
     d.rounded_rectangle((120, 450, WIDTH - 120, 690), radius=16, fill=GREEN_SOFT)
     d.text((160, 472), "Проверка вопросом", font=font(28, bold=True), fill=GREEN)
@@ -532,17 +584,26 @@ def frame_11_homework() -> Image.Image:
 
 FRAMES: list[tuple[FrameSpec, callable]] = [
     (FrameSpec(0, 6.0, "interval", "Zoom-раскладка: два участника, аватары, запись началась"), frame_00_zoom_layout),
-    (FrameSpec(1, 165.0, "scene", "Титульный слайд: тема и цель урока"), frame_01_title),
-    (FrameSpec(2, 255.0, "scene", "Таблица окончаний дательного и предложного падежа"), frame_02_table),
-    (FrameSpec(3, 705.0, "scene", "Слайд «Куда? или Где?» — направление и место"), frame_03_where_vs_whereto),
-    (FrameSpec(4, 940.0, "scene", "Упражнение 2: шесть предложений с пропусками"), frame_04_exercise_2),
-    (FrameSpec(5, 1180.0, "scene", "Доска: разбор ошибки «иду в школе», параллели с казахским"), frame_05_whiteboard),
-    (FrameSpec(6, 1260.0, "scene", "Упражнение 3 в документе: шесть предложений (пустые)"), frame_06_exercise_3_blank),
-    (FrameSpec(7, 1420.0, "scene", "Упражнение 3: напечатанные ответы ученика, №5 выделено"), frame_07_exercise_3_typed),
-    (FrameSpec(8, 1625.0, "scene", "Упражнение 4: напечатано «хочет учится» (ошибка -тся/-ться)"), frame_08_tsya_mistake),
-    (FrameSpec(9, 1725.0, "scene", "Упражнение 4: исправлено «учиться», правило проверки вопросом"), frame_09_tsya_fixed),
-    (FrameSpec(10, 1860.0, "scene", "Итоги урока: четыре правила"), frame_10_recap),
-    (FrameSpec(11, 2010.0, "scene", "Домашнее задание и следующий урок"), frame_11_homework),
+    (FrameSpec(1, 160.0, "scene", "Титульный слайд: тема и цель урока"), frame_01_title),
+    (FrameSpec(2, 200.0, "scene", "Таблица окончаний дательного и предложного падежа"), frame_02_table),
+    (FrameSpec(3, 676.0, "scene", "Слайд «Куда? или Где?» — направление и место"), frame_03_where_vs_whereto),
+    (FrameSpec(4, 932.0, "scene", "Упражнение 2: шесть предложений с пропусками"), frame_04_exercise_2),
+    (FrameSpec(5, 1168.0, "scene", "Доска: разбор ошибки «иду в школе», параллели с казахским"), frame_05_whiteboard),
+    (FrameSpec(6, 1256.0, "scene", "Упражнение 3 в документе: шесть предложений (пустые)"), frame_06_exercise_3_blank),
+    (
+        FrameSpec(7, 1330.0, "scene", "Упражнение 3: напечатанные ответы ученика, №5 выделено"),
+        frame_07_exercise_3_typed,
+    ),
+    (
+        FrameSpec(8, 1590.0, "scene", "Упражнение 4: напечатано «хочет учится» (ошибка -тся/-ться)"),
+        frame_08_tsya_mistake,
+    ),
+    (
+        FrameSpec(9, 1700.0, "scene", "Упражнение 4: исправлено «учиться», правило проверки вопросом"),
+        frame_09_tsya_fixed,
+    ),
+    (FrameSpec(10, 1846.0, "scene", "Итоги урока: четыре правила"), frame_10_recap),
+    (FrameSpec(11, 1962.0, "scene", "Домашнее задание и следующий урок"), frame_11_homework),
 ]
 
 
@@ -582,7 +643,9 @@ def build(out_dir: Path) -> list[dict]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output directory (default: demo/lesson_01/frames)")
+    parser.add_argument(
+        "--out", type=Path, default=DEFAULT_OUT, help="output directory (default: demo/lesson_01/frames)"
+    )
     args = parser.parse_args(argv)
     meta = build(args.out)
     print(f"{len(meta)} frames written to {args.out} (fonts: {REGULAR_TTF.name}, {BOLD_TTF.name})")

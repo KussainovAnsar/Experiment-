@@ -187,7 +187,7 @@ export function CopyBox({ value }: { value: string }) {
 
 export function BackLink({ to, children }: { to: string; children: ReactNode }) {
   return (
-    <Link to={to} className="small muted">
+    <Link to={to} className="small muted back-link">
       ← {children}
     </Link>
   );

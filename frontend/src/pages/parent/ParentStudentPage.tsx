@@ -68,7 +68,7 @@ export function ParentStudentPage() {
               </div>
               <div className="section">
                 <h3>По темам</h3>
-                <SkillGroups skills={progress.data.skills} lessonLink={lessonLink} />
+                <SkillGroups skills={progress.data.skills} lessonLink={lessonLink} audience="parent" />
               </div>
               <div className="section">
                 <h3>От урока к уроку</h3>

@@ -164,6 +164,14 @@ export interface MagicLinkOut {
   url: string;
 }
 
+/** Short-lived token for `?access_token=` on this lesson's media URLs (GET /api/lessons/{id}/media-token). */
+export interface MediaToken {
+  access_token: string;
+  token_type?: string;
+  lesson_id: string;
+  expires_at: string;
+}
+
 export interface Notification {
   id: string;
   parent_id: string | null;
@@ -259,7 +267,8 @@ export interface Dashboard {
   lessons_processing: number;
   lessons_failed?: number;
   share_objectives_checked: number | null;
-  needs_review_count: number;
+  /** null for the teacher role — the methodist-review indicator is manager-only. */
+  needs_review_count: number | null;
   recent_lessons: Lesson[];
   needs_review_lessons: Lesson[];
 }
@@ -268,9 +277,13 @@ export interface Dashboard {
 
 export interface SkillEvidence {
   lesson_id: string;
+  /** ISO date of the lesson the entry comes from (lets the UI group evidence by lesson). */
+  lesson_at?: string | null;
   timestamp_sec: number | null;
   note: string;
   status?: SkillStatus | null;
+  /** summary (one per lesson) | evidence | error */
+  kind?: string | null;
 }
 
 export interface SkillProgress {
@@ -349,6 +362,8 @@ export interface ParentFrame {
   index: number;
   timestamp_sec: number;
   url: string;
+  /** Plain-language caption (what the analysis saw on this frame); null when unknown. */
+  caption?: string | null;
 }
 
 /** Parent report data as produced by pipeline/reports.py — rendered defensively. */
@@ -376,7 +391,10 @@ export interface ParentLessonReport {
   scheduled_at: string;
   teacher_name: string;
   data: ParentReportData;
+  /** Only the frames the report points at (errors, successes, visual issues), in time order. */
   frames: ParentFrame[];
+  /** Short-lived `?access_token=` for the frame URLs; null when there are no frames. */
+  media_token?: string | null;
 }
 
 export interface ParentMeUpdate {

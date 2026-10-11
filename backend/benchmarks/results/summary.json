@@ -79,6 +79,16 @@
       "elapsed_sec": 2115.8
     },
     {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "backend_version": "onnxruntime 1.31.0",
+      "backend_model": "turbo",
+      "compute_type": "int8",
+      "threads": 4,
+      "started_at": "2026-10-11T15:55:24.690527+00:00",
+      "elapsed_sec": 622.8
+    },
+    {
       "model": "tiny",
       "backend": "sherpa-onnx",
       "backend_version": "1.13.8",
@@ -928,6 +938,198 @@
       "detected_languages": {
         "ru": 22,
         "kk": 8
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 104.44,
+      "rtf": 0.776,
+      "wer": 0.1303,
+      "cer": 0.0441,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 27.09,
+      "rtf": 0.201,
+      "wer": 0.1303,
+      "cer": 0.0441,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "ru",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 32,
+      "audio_sec": 134.55,
+      "decode_sec": 104.32,
+      "rtf": 0.775,
+      "wer": 0.1303,
+      "cer": 0.0467,
+      "detected_languages": {
+        "ru": 32
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 96.94,
+      "rtf": 1.61,
+      "wer": 0.4234,
+      "cer": 0.1053,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "kk",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 60.21,
+      "decode_sec": 26.44,
+      "rtf": 0.439,
+      "wer": 0.4234,
+      "cer": 0.1053,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 89.13,
+      "rtf": 0.867,
+      "wer": 0.5691,
+      "cer": 0.3203,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "forced:kk",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 28.59,
+      "rtf": 0.278,
+      "wer": 0.6906,
+      "cer": 0.3995,
+      "detected_languages": {
+        "kk": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "clean",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 24.54,
+      "rtf": 0.239,
+      "wer": 0.5801,
+      "cer": 0.3096,
+      "detected_languages": {
+        "kk": 17,
+        "ru": 13
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": true
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "forced:ru",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 94.17,
+      "rtf": 0.916,
+      "wer": 0.6077,
+      "cer": 0.3612,
+      "detected_languages": {
+        "ru": 30
+      },
+      "skipped": false,
+      "skip_reason": null,
+      "rtf_decode_only": false
+    },
+    {
+      "model": "large-v3-turbo",
+      "backend": "whisper-onnx",
+      "subset": "mixed",
+      "condition": "degraded",
+      "language_mode": "auto",
+      "n": 30,
+      "audio_sec": 102.77,
+      "decode_sec": 24.35,
+      "rtf": 0.237,
+      "wer": 0.5912,
+      "cer": 0.3132,
+      "detected_languages": {
+        "ru": 17,
+        "kk": 13
       },
       "skipped": false,
       "skip_reason": null,

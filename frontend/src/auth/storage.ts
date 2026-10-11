@@ -88,9 +88,12 @@ export function clearParentAuth(): void {
   setParentSession(null);
 }
 
-/** Append ?access_token=<jwt> to a media URL (img/video tags cannot send headers). */
-export function withAccessToken(url: string, realm: Realm): string {
-  const token = getToken(realm);
+/**
+ * Append `?access_token=<media token>` to a media URL (img/video tags cannot send headers).
+ * Only the short-lived, lesson-scoped media token goes into URLs — never the staff/parent session JWT,
+ * which would end up in proxy logs and browser history. Without a token the URL is returned as is.
+ */
+export function withMediaToken(url: string, token: string | null | undefined): string {
   if (!token) return url;
   const sep = url.includes("?") ? "&" : "?";
   return `${url}${sep}access_token=${encodeURIComponent(token)}`;

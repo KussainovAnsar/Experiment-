@@ -284,3 +284,36 @@ async def test_build_reports_creates_versions(session: AsyncSession, tmp_path) -
         assert len(rows) == 6
     finally:
         await cleanup(session, g["center"].id)
+
+
+def test_demo_lesson_episodes_attribute_re_explanations_by_skill() -> None:
+    """Regression for the demo lesson: a re-explanation of «куда/где» must not be chained to earlier errors of
+    other skills, and a repeat is only claimed when it follows the attributed re-explanation."""
+    import json
+
+    from app.config import REPO_DIR
+    from app.schemas.analysis import LessonAnalysis
+
+    a = LessonAnalysis.model_validate(json.loads((REPO_DIR / "demo/lesson_01/analysis.json").read_text("utf-8")))
+    episodes = build_episodes(a, _ctx(frames_by_index={}))
+    by_ts = {ep["timestamp"]: ep for ep in episodes}
+    e_0134, e_0735, e_1420, e_1609, e_1905, e_2152, e_2613 = (
+        by_ts[94.1], by_ts[454.7], by_ts[860.0], by_ts[969.4], by_ts[1145.0], by_ts[1311.7], by_ts[1573.6]
+    )
+    re1, re2 = 862.5, 1157.0  # the two «куда/где» re-explanations in the timeline
+
+    assert e_0134["re_explanation"] is None and e_0134["repeated_at"] is None  # self-corrected dative slip
+    assert e_0735["re_explanation"] is None and e_0735["repeated_at"] is None and e_0735["repeated"] is False
+    assert e_1420["re_explanation"]["timestamp"] == re1 and e_1420["repeated_at"] == fmt_ts(969.4)
+    assert e_1609["re_explanation"]["timestamp"] == re2
+    assert e_1609["repeated_at"] == fmt_ts(1311.7)  # after the re-explanation, not 19:05 before it
+    assert e_1905["re_explanation"]["timestamp"] == re2 and e_1905["repeated_at"] == fmt_ts(1311.7)
+    assert e_2152["re_explanation"] is None and e_2152["repeated_at"] is None
+    assert e_2152["repeated"] is True  # the LLM's own flag: this error itself followed an explanation
+    assert e_2613["re_explanation"] is None  # 26:40 is an explanation, not a re-explanation
+
+    md = render_teacher_markdown(build_teacher_report_data(a, _ctx(frames_by_index={})))
+    first_two = md.split(f"### [{fmt_ts(860.0)}]")[0]
+    assert f"### [{fmt_ts(94.1)}]" in first_two and f"### [{fmt_ts(454.7)}]" in first_two
+    assert "переобъяснение в [" not in first_two  # nothing chained to the earlier padezh errors
+    assert f"переобъяснение в [{fmt_ts(re1)}]" in md.split(f"### [{fmt_ts(860.0)}]")[1].split("### [")[0]

@@ -3,7 +3,11 @@
 Commands (all replies in Russian):
 
 * ``/start <invite_code>`` — find the parent by invite code (case-insensitive), bind ``telegram_chat_id``,
-  greet with the linked children's first names and a fresh portal magic link (inline URL button).
+  greet with the linked children's first names and a fresh portal magic link (inline URL button). A code is
+  **single-use**: after a successful bind it is rotated, a parent whose chat is already bound is never re-pointed
+  to another chat (the caller is told to contact the centre; staff reset the link with «Отозвать доступ»), and a
+  chat that keeps guessing codes is ignored for a while (:data:`MAX_CODE_MISSES` misses per
+  :data:`CODE_MISS_WINDOW_SEC`).
 * ``/start`` without a code — explain how to get the invite from the centre.
 * ``/progress`` — latest parent report per linked child (re-rendered with a fresh portal link) or «Отчётов пока нет».
 * ``/help`` — command list. ``/stop`` — ``preferred_channel = none``.
@@ -21,6 +25,7 @@ import asyncio
 import contextlib
 import html as html_lib
 import os
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -38,6 +43,7 @@ from app.config import get_settings
 from app.db.models import Channel, Parent
 from app.db.session import get_sessionmaker
 from app.logging import get_logger
+from app.services.auth import issue_unique_invite_code
 from app.services.notifications import (
     PORTAL_BUTTON_TEXT,
     first_name,
@@ -50,6 +56,12 @@ from app.services.notifications import (
 log = get_logger("app.bot.telegram")
 
 BOT_USERNAME_ENV = "TELEGRAM_BOT_USERNAME"
+
+# Unknown-code guessing: after MAX_CODE_MISSES misses within CODE_MISS_WINDOW_SEC a chat's /start is ignored
+# until the window passes (in-process; enough for one bot process, which Telegram requires anyway).
+MAX_CODE_MISSES = 5
+CODE_MISS_WINDOW_SEC = 3600.0
+_code_misses: dict[int, tuple[int, float]] = {}
 
 # Module-level cache: resolved once per process (getMe) or taken from the environment.
 _bot_username: str | None = None
@@ -76,6 +88,14 @@ TEXT_CODE_NOT_FOUND = (
 TEXT_CHAT_CONFLICT = (
     "Этот Telegram-аккаунт уже привязан к другому родителю. Чтобы мы не перепутали отчёты, обратитесь, "
     "пожалуйста, в ваш образовательный центр — администратор поможет переназначить привязку."
+)
+TEXT_CODE_ALREADY_USED = (
+    "Этот пригласительный код уже использован: аккаунт родителя подключён к другому Telegram. "
+    "Если это ваш код, обратитесь, пожалуйста, в ваш образовательный центр — администратор отвяжет старый "
+    "Telegram и выдаст новый код."
+)
+TEXT_TOO_MANY_ATTEMPTS = (
+    "Слишком много попыток ввести код. Уточните код у администратора центра и попробуйте снова через час."
 )
 TEXT_NOT_LINKED = (
     "Ваш Telegram пока не привязан к кабинету родителя. Отправьте команду <code>/start КОД</code> с "
@@ -222,32 +242,80 @@ def _greeting(parent: Parent, names: Sequence[str], *, already_linked: bool) -> 
     )
 
 
+# ---------------------------------------------------------------- code-guessing guard
+
+
+def _code_miss_blocked(chat_id: int, *, now: float | None = None) -> bool:
+    """True when the chat exhausted :data:`MAX_CODE_MISSES` unknown codes within the window."""
+    now = time.monotonic() if now is None else now
+    entry = _code_misses.get(chat_id)
+    if entry is None:
+        return False
+    count, first_at = entry
+    if now - first_at >= CODE_MISS_WINDOW_SEC:
+        del _code_misses[chat_id]
+        return False
+    return count >= MAX_CODE_MISSES
+
+
+def _record_code_miss(chat_id: int, *, now: float | None = None) -> int:
+    """Count an unknown code for the chat; returns the number of misses in the current window."""
+    now = time.monotonic() if now is None else now
+    count, first_at = _code_misses.get(chat_id, (0, now))
+    if now - first_at >= CODE_MISS_WINDOW_SEC:
+        count, first_at = 0, now
+    _code_misses[chat_id] = (count + 1, first_at)
+    if len(_code_misses) > 10_000:  # bounded memory: drop expired entries
+        for key in [k for k, (_, t) in _code_misses.items() if now - t >= CODE_MISS_WINDOW_SEC]:
+            del _code_misses[key]
+    return count + 1
+
+
+def reset_code_misses() -> None:
+    """Forget every chat's miss counter (tests)."""
+    _code_misses.clear()
+
+
 # ---------------------------------------------------------------- handlers
 
 
 @router.message(CommandStart())
 async def handle_start(message: Message, command: CommandObject | None = None) -> None:
-    """``/start [invite_code]`` — bind the chat to a parent and send the portal link."""
+    """``/start [invite_code]`` — bind the chat to a parent (single-use code) and send the portal link."""
     code = (command.args if command is not None else "") or ""
     code = code.strip().upper()
     if not code:
         await message.answer(TEXT_START_NO_CODE)
         return
     chat_id = message.chat.id
+    if _code_miss_blocked(chat_id):
+        log.warning("bot_start_throttled", chat_id=chat_id)
+        await message.answer(TEXT_TOO_MANY_ATTEMPTS)
+        return
     async with get_sessionmaker()() as session:
         parent = await find_parent_by_invite_code(session, code)
         if parent is None:
-            log.info("bot_start_unknown_code", chat_id=chat_id)
-            await message.answer(TEXT_CODE_NOT_FOUND.format(code=html_lib.escape(code)))
-            return
+            # A parent re-opening an old deep link after the bind rotated the code: greet, do not count a miss.
+            parent = await find_parent_by_chat_id(session, chat_id)
+            if parent is None:
+                misses = _record_code_miss(chat_id)
+                log.info("bot_start_unknown_code", chat_id=chat_id, misses=misses)
+                await message.answer(TEXT_CODE_NOT_FOUND.format(code=html_lib.escape(code)))
+                return
         already_linked = parent.telegram_chat_id == chat_id
         if not already_linked:
+            if parent.telegram_chat_id is not None:
+                # Never re-point a bound parent to another chat: knowing the code must not hijack the reports.
+                log.warning("bot_start_parent_already_bound", parent_id=str(parent.id), chat_id=chat_id)
+                await message.answer(TEXT_CODE_ALREADY_USED)
+                return
             other = await find_parent_by_chat_id(session, chat_id)
             if other is not None and other.id != parent.id:
                 log.warning("bot_start_chat_conflict", parent_id=str(parent.id), other_parent_id=str(other.id))
                 await message.answer(TEXT_CHAT_CONFLICT)
                 return
             parent.telegram_chat_id = chat_id
+            parent.invite_code = await issue_unique_invite_code(session)  # single-use: rotate after the bind
             try:
                 await session.flush()
             except IntegrityError:  # race: the same chat was bound to another parent concurrently

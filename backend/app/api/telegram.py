@@ -22,11 +22,16 @@ log = get_logger("app.api.telegram")
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
 
+def _same(a: str, b: str) -> bool:
+    # Compare bytes: ``compare_digest`` on str raises TypeError for non-ASCII input (→ 500 instead of 403).
+    return secrets_lib.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
 def _check_secret(path_secret: str, header_secret: str | None) -> None:
     expected = get_settings().telegram_webhook_secret
-    if not expected or not secrets_lib.compare_digest(path_secret, expected):
+    if not expected or not _same(path_secret, expected):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ запрещён")
-    if header_secret is not None and not secrets_lib.compare_digest(header_secret, expected):
+    if header_secret is not None and not _same(header_secret, expected):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ запрещён")
 
 

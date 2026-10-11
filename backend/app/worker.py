@@ -1,10 +1,12 @@
 """Job worker: ``python -m app.worker`` (``PIPELINE_MODE=worker``).
 
 Polls the ``jobs`` table every 2 s, claims one job at a time with ``FOR UPDATE SKIP LOCKED`` and runs it.
-``process_lesson`` jobs run :func:`app.pipeline.runner.run_lesson_pipeline_result`; a lesson that ends in
-``failed`` fails the job, which is retried with exponential backoff up to ``max_attempts``. SIGTERM/SIGINT
-stop the loop after the current job finishes (graceful shutdown). Stale ``running`` jobs (worker crashed)
-are released back to the queue every few minutes.
+``process_lesson`` jobs run :func:`app.pipeline.runner.run_lesson_pipeline_detailed`; a lesson that ends in
+``failed`` fails the job, which is retried with exponential backoff up to ``max_attempts`` **only for transient
+errors** (STT/LLM/network) — deterministic failures (bad media, invalid model output, DB constraint, missing
+module) fail the job at once instead of re-running the lesson three times. A job whose lesson is already being
+processed by another run is completed as a no-op. SIGTERM/SIGINT stop the loop after the current job finishes
+(graceful shutdown). Stale ``running`` jobs (worker crashed) are released back to the queue every few minutes.
 
 Environment: ``WORKER_POLL_INTERVAL_SEC`` (2), ``WORKER_ID`` (hostname-pid), ``WORKER_STALE_JOB_HOURS`` (3).
 """
@@ -26,7 +28,8 @@ from app.db.models import Job, LessonStatus
 from app.db.session import get_engine, get_sessionmaker
 from app.logging import configure_logging, get_logger
 from app.pipeline import jobs
-from app.pipeline.runner import run_lesson_pipeline_result
+from app.pipeline.runner import run_lesson_pipeline_detailed
+from app.startup_checks import check_secret_key
 
 log = get_logger("app.worker")
 
@@ -47,10 +50,17 @@ async def handle_job(job: Job, *, sessionmaker: async_sessionmaker) -> tuple[boo
             lesson_id = uuid.UUID(str(raw))
         except (ValueError, TypeError):
             return False, f"invalid lesson_id in payload: {raw!r}", False
-        status = await run_lesson_pipeline_result(lesson_id, sessionmaker=sessionmaker)
-        if status == LessonStatus.done:
+        result = await run_lesson_pipeline_detailed(lesson_id, sessionmaker=sessionmaker)
+        if result.status is None:
+            log.info("job_skipped_lesson_busy", job_id=str(job.id), lesson_id=str(lesson_id))
+            return True, None, False  # another run owns the lesson: nothing to do, nothing to retry
+        if result.status == LessonStatus.done:
             return True, None, False
-        return False, f"lesson {lesson_id} ended with status {status.value}", True
+        return (
+            False,
+            f"lesson {lesson_id} ended with status {result.status.value} ({result.error_type})",
+            result.retryable,
+        )
     return False, f"unknown job kind: {job.kind}", False
 
 
@@ -129,6 +139,7 @@ def main() -> None:
     """Entry point for ``python -m app.worker``."""
     settings = get_settings()
     configure_logging(level="DEBUG" if settings.app_env == "dev" else "INFO", json_output=settings.app_env != "dev")
+    check_secret_key(settings)  # the worker signs nothing, but a prod stack must never run on the public key
     if settings.pipeline_mode != "worker":
         log.warning("worker_running_with_inline_mode", pipeline_mode=settings.pipeline_mode)
     asyncio.run(_main_async())

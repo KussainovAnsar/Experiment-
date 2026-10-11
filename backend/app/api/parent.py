@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.api.progress import progress_summary, skills_summary
 from app.api.reports import latest_reports
 from app.db.models import (
     ActorType,
+    Analysis,
     Center,
     Frame,
     Lesson,
@@ -39,10 +40,55 @@ from app.schemas.api import (
     StudentBrief,
 )
 from app.services.audit import audit
-from app.services.auth import create_parent_token, exchange_magic_link
+from app.services.auth import create_media_token, create_parent_token, exchange_magic_link
+from app.services.ratelimit import rate_limited
 
 router = APIRouter(prefix="/api/parent", tags=["parent"])
 log = get_logger(__name__)
+
+PARENT_FRAMES_MAX = 6
+_exchange_limit = rate_limited("parent_exchange", per_ip=(10, 60.0))
+
+
+def select_parent_frames(analysis_data: dict[str, Any] | None, frames: list[Frame]) -> list[ParentFrameOut]:
+    """Keyframes worth showing to a parent: the ones the analysis points at, with plain captions.
+
+    Frames referenced by errors, independent successes and visual observations with an ``issue`` come first;
+    when the analysis references nothing, high-relevance visual observations are used. Ordered by time, at most
+    :data:`PARENT_FRAMES_MAX`; an empty list hides the section in the portal.
+    """
+    data = analysis_data or {}
+    by_index = {f.index: f for f in frames}
+    captions: dict[int, str] = {}
+    high_relevance: list[int] = []
+    for obs in data.get("visual_observations") or []:
+        if not isinstance(obs, dict) or not isinstance(obs.get("frame_id"), int):
+            continue
+        idx = obs["frame_id"]
+        text = str(obs.get("issue") or obs.get("description") or "").strip()
+        if text:
+            captions.setdefault(idx, text)
+        if obs.get("relevance") == "high":
+            high_relevance.append(idx)
+    referenced: set[int] = set()
+    for key in ("errors", "independent_successes"):
+        for item in data.get(key) or []:
+            if isinstance(item, dict):
+                ids = [i for i in (item.get("frame_ids") or []) if isinstance(i, int)]
+                referenced.update(ids)
+                desc = str(item.get("description") or "").strip()
+                for i in ids:
+                    if desc:
+                        captions.setdefault(i, desc)
+    for obs in data.get("visual_observations") or []:
+        if isinstance(obs, dict) and obs.get("issue") and isinstance(obs.get("frame_id"), int):
+            referenced.add(obs["frame_id"])
+    chosen = referenced if referenced else set(high_relevance)
+    picked = sorted((by_index[i] for i in chosen if i in by_index), key=lambda f: f.timestamp_sec)
+    return [
+        ParentFrameOut(index=f.index, timestamp_sec=f.timestamp_sec, url=frame_url(f.id), caption=captions.get(f.index))
+        for f in picked[:PARENT_FRAMES_MAX]
+    ]
 
 
 async def _parent_me(session: AsyncSession, parent: Parent) -> ParentMeOut:
@@ -85,9 +131,9 @@ def _brief(student: Student) -> StudentBrief:
     return StudentBrief(id=student.id, full_name=student.full_name, grade=student.grade)
 
 
-@router.post("/auth/exchange", response_model=ParentExchangeResponse)
+@router.post("/auth/exchange", response_model=ParentExchangeResponse, dependencies=[Depends(_exchange_limit)])
 async def exchange(body: ParentExchangeRequest, session: DbSession) -> ParentExchangeResponse:
-    """Exchange a magic-link token for a parent JWT. The link stays reusable until it expires."""
+    """Exchange a magic-link token for a parent JWT. The link stays reusable until it expires (10/min per IP)."""
     parent = await exchange_magic_link(session, body.token)
     if parent is None:
         raise HTTPException(
@@ -162,13 +208,12 @@ async def student_lessons(student_id: uuid.UUID, parent: CurrentParent, session:
     reports = (
         await session.execute(
             select(Report)
+            .distinct(Report.lesson_id)
             .where(Report.lesson_id.in_([lesson.id for lesson in lesson_list]), Report.kind == ReportKind.parent)
-            .order_by(Report.version.desc())
+            .order_by(Report.lesson_id, Report.version.desc())
         )
     ).scalars()
-    latest: dict[uuid.UUID, Report] = {}
-    for report in reports:
-        latest.setdefault(report.lesson_id, report)
+    latest: dict[uuid.UUID, Report] = {report.lesson_id: report for report in reports}
     cards: list[ParentLessonCard] = []
     for lesson in lesson_list:
         data: dict[str, Any] = latest[lesson.id].data if lesson.id in latest else {}
@@ -188,7 +233,7 @@ async def student_lessons(student_id: uuid.UUID, parent: CurrentParent, session:
 async def lesson_report(
     student_id: uuid.UUID, lesson_id: uuid.UUID, parent: CurrentParent, session: DbSession
 ) -> ParentLessonReportOut:
-    """Full parent report of one lesson with frame links."""
+    """Full parent report of one lesson with the frames it refers to and a short-lived media token for them."""
     student = await get_linked_student_or_404(session, parent, student_id)
     lesson = (
         await session.execute(
@@ -203,13 +248,21 @@ async def lesson_report(
     if report is None:
         raise not_found("Отчёт")
     teacher = await session.get(Teacher, lesson.teacher_id)
-    frames = (await session.execute(select(Frame).where(Frame.lesson_id == lesson.id).order_by(Frame.index))).scalars()
+    frames = list(
+        (await session.execute(select(Frame).where(Frame.lesson_id == lesson.id).order_by(Frame.index))).scalars()
+    )
+    analysis = (await session.execute(select(Analysis).where(Analysis.lesson_id == lesson.id))).scalar_one_or_none()
+    picked = select_parent_frames(analysis.data if analysis is not None else None, frames)
+    media_token, _ = create_media_token(
+        principal="parent", principal_id=parent.id, center_id=parent.center_id, lesson_id=lesson.id
+    )
     return ParentLessonReportOut(
         lesson_id=lesson.id,
         scheduled_at=lesson.scheduled_at,
         teacher_name=teacher.full_name if teacher else "",
         data=report.data,
-        frames=[ParentFrameOut(index=f.index, timestamp_sec=f.timestamp_sec, url=frame_url(f.id)) for f in frames],
+        frames=picked,
+        media_token=media_token if picked else None,
     )
 
 

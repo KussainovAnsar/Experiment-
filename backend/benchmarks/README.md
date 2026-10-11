@@ -18,7 +18,7 @@ benchmarks/
   whisper_onnx.py         byte-correct greedy Whisper decoder over the sherpa-onnx ONNX exports (onnxruntime)
   test_bench.py           unit tests for normalisation and dataset invariants (run explicitly)
   requirements-bench.txt  benchmark-only Python deps
-  results/                committed: RESULTS.md, summary.json, <backend>_<model>.json (with per-utterance hyps)
+  results/                committed: RESULTS.md, summary.json, <backend>_<model>.json (per-utterance hyps), run_log_*.txt
   data/                   gitignored: generated audio + manifest (~30 MB)
   models/                 gitignored: Piper voices (~300 MB) and Whisper weights (up to ~7 GB)
 ```
@@ -91,8 +91,24 @@ space, whitespace collapsed. Kazakh-specific letters (ә, ғ, қ, ң, ө, ұ, ү
 ## Observed runtime (4 vCPU, 15 GB RAM, int8)
 
 <!-- RUNTIME_BEGIN -->
-_Filled in from `results/summary.json` after the run._
+| model | backend | wall time (10 runs incl. model loads) | RTF ru/clean | RTF kk/clean | skipped runs |
+|---|---|---|---|---|---|
+| tiny | whisper-onnx | 1.7 min | 0.133 | 0.229 | — |
+| base | whisper-onnx | 3.1 min | 0.195 | 0.419 | — |
+| small | whisper-onnx | 9.0 min | 0.542 | 1.15 | — |
+| medium | whisper-onnx | 35.3 min | 1.982 | 4.326 | — |
+| large-v3-turbo | whisper-onnx | 10.4 min | 0.776 | 1.61 | — |
+| tiny | sherpa-onnx | 1.7 min | 0.089 | 0.112 | — |
+| base | sherpa-onnx | 2.6 min | 0.134 | 0.179 | — |
+| small | sherpa-onnx | 7.4 min | 0.41 | 0.551 | — |
+| medium | sherpa-onnx | 28.4 min | 1.599 | 2.355 | — |
+
+Total benchmark wall time: 100 min for 9 model/backend combinations (matrix of 10 runs each, ~17 min of audio per combination). RTF = decode time / audio duration, excluding model load. Models were run sequentially; nothing else was running on the machine.
 <!-- RUNTIME_END -->
+
+The `sherpa-onnx` backend was run only up to `medium`: once the byte-token defect was confirmed the
+run was stopped to save CPU time (`whisper-onnx` is the primary backend). Per-run log lines are in
+`results/run_log_whisper-onnx.txt` and `results/run_log_sherpa-onnx.txt`.
 
 Dataset synthesis: ~1 min 40 s for 154 files (Piper on CPU). Model downloads: tiny 245 MB, base 433 MB,
 small 1.3 GB, medium 3.8 GB (fp32 + int8 in the archive), large-v3-turbo 990 MB (int8 only).

@@ -9,7 +9,7 @@ import {
   setParentToken,
   setStaffToken,
   STAFF_TOKEN_KEY,
-  withAccessToken,
+  withMediaToken,
 } from "./storage";
 
 function fakeJwt(payload: Record<string, unknown>): string {
@@ -41,11 +41,12 @@ describe("auth storage", () => {
     expect(getParentToken()).toBeNull();
   });
 
-  it("appends access_token to media URLs for img/video tags", () => {
-    setStaffToken("tok en");
-    expect(withAccessToken("/api/media/frames/abc", "staff")).toBe("/api/media/frames/abc?access_token=tok%20en");
-    expect(withAccessToken("/api/x?y=1", "staff")).toBe("/api/x?y=1&access_token=tok%20en");
-    expect(withAccessToken("/api/media/frames/abc", "parent")).toBe("/api/media/frames/abc");
+  it("appends the media token (never the session JWT) to media URLs for img/video tags", () => {
+    setStaffToken("session.jwt");
+    expect(withMediaToken("/api/media/frames/abc", "tok en")).toBe("/api/media/frames/abc?access_token=tok%20en");
+    expect(withMediaToken("/api/x?y=1", "tok en")).toBe("/api/x?y=1&access_token=tok%20en");
+    expect(withMediaToken("/api/media/frames/abc", null)).toBe("/api/media/frames/abc");
+    expect(withMediaToken("/api/media/frames/abc", undefined)).not.toContain("session.jwt");
   });
 
   it("detects expired JWTs from the exp claim", () => {

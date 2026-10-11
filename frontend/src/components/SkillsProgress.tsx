@@ -1,22 +1,66 @@
 /** Skills grouped by status with chips + per-skill evidence; lesson dynamics. Shared by staff and parent pages. */
 import { Link } from "react-router-dom";
-import { formatDateShort, formatTimecode, pluralize } from "@/lib/format";
+import { formatDateLong, formatDateShort, formatTimecode, pluralize } from "@/lib/format";
 import { SKILL_STATUS_META } from "@/lib/status";
-import type { LessonProgressPoint, SkillProgress, SkillsCounts } from "@/types/api";
+import type { LessonProgressPoint, SkillEvidence, SkillProgress, SkillsCounts } from "@/types/api";
 import type { SkillStatus } from "@/types/analysis";
 import { SkillChip, SkillStatusBadge } from "./ui";
 
 const ORDER: SkillStatus[] = ["struggling", "developing", "mastered"];
+/** How many recent lessons the parent view lists per skill. */
+const PARENT_HISTORY_LESSONS = 3;
+
+export type ProgressAudience = "staff" | "parent";
 
 export function SkillCounts({ counts }: { counts: SkillsCounts }) {
+  // «трудности: 1» — label first, so the count never has to agree in number with the noun.
   return (
     <div className="counts">
       {ORDER.map((st) => (
         <span key={st} className={`count-pill chip-${st}`}>
-          <b>{counts[st] ?? 0}</b> {SKILL_STATUS_META[st]!.label.toLowerCase()}
+          {SKILL_STATUS_META[st]!.label.toLowerCase()}: <b>{counts[st] ?? 0}</b>
         </span>
       ))}
     </div>
+  );
+}
+
+interface LessonHistoryItem {
+  lessonId: string;
+  lessonAt: string | null;
+  status: SkillStatus | null;
+}
+
+/** One line per lesson (newest first) from the raw evidence: the per-lesson summary entry wins, else the first entry. */
+export function lessonHistory(evidence: SkillEvidence[], limit = PARENT_HISTORY_LESSONS): LessonHistoryItem[] {
+  const byLesson = new Map<string, LessonHistoryItem>();
+  for (const e of evidence) {
+    const current = byLesson.get(e.lesson_id);
+    const item: LessonHistoryItem = {
+      lessonId: e.lesson_id,
+      lessonAt: e.lesson_at ?? current?.lessonAt ?? null,
+      status: e.status ?? current?.status ?? null,
+    };
+    if (!current || e.kind === "summary") byLesson.set(e.lesson_id, { ...current, ...item });
+  }
+  return [...byLesson.values()]
+    .sort((a, b) => (b.lessonAt ?? "").localeCompare(a.lessonAt ?? ""))
+    .slice(0, limit);
+}
+
+/** Parent-facing skill history: one short line per recent lesson with the date and the plain status hint. */
+function ParentSkillHistory({ skill, lessonLink }: { skill: SkillProgress; lessonLink: (lessonId: string) => string }) {
+  const history = lessonHistory(skill.evidence);
+  if (history.length === 0) return <p className="small muted mb-0">Подробностей пока нет.</p>;
+  return (
+    <ul className="evidence-list">
+      {history.map((h) => (
+        <li key={h.lessonId}>
+          <Link to={lessonLink(h.lessonId)}>{h.lessonAt ? `Урок ${formatDateLong(h.lessonAt)}` : "Урок"}</Link>
+          <div className="muted">{h.status ? SKILL_STATUS_META[h.status]!.hint : "Тема встречалась на уроке."}</div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -37,11 +81,14 @@ export function SkillGroups({
   skills,
   lessonLink,
   compact,
+  audience = "staff",
 }: {
   skills: SkillProgress[];
   /** Builds a link to a lesson (staff: /lessons/:id, parent: /parent/students/:sid/lessons/:id). */
   lessonLink: (lessonId: string) => string;
   compact?: boolean;
+  /** Parents get a short per-lesson history instead of the raw evidence list meant for methodists. */
+  audience?: ProgressAudience;
 }) {
   if (skills.length === 0) {
     return <p className="muted">Пока нет данных о навыках — они появятся после первого обработанного урока.</p>;
@@ -74,16 +121,19 @@ export function SkillGroups({
                       {s.times_struggled > 0 ? ` · с трудностями ${pluralize(s.times_struggled, ["раз", "раза", "раз"])}` : ""}
                     </span>
                   </summary>
-                  {s.evidence.length === 0 ? (
+                  {audience === "parent" ? (
+                    <ParentSkillHistory skill={s} lessonLink={lessonLink} />
+                  ) : s.evidence.length === 0 ? (
                     <p className="small muted mb-0">Подробностей пока нет.</p>
                   ) : (
                     <ul className="evidence-list">
                       {s.evidence.map((e, i) => (
                         <li key={i}>
                           <Link to={lessonLink(e.lesson_id)}>
-                            Урок{e.timestamp_sec !== null && e.timestamp_sec !== undefined ? ` · ${formatTimecode(e.timestamp_sec)}` : ""}
+                            {e.lesson_at ? `Урок ${formatDateShort(e.lesson_at)}` : "Урок"}
+                            {e.timestamp_sec !== null && e.timestamp_sec !== undefined ? ` · ${formatTimecode(e.timestamp_sec)}` : ""}
                           </Link>
-                          {e.status && (
+                          {e.status && e.kind !== "error" && (
                             <>
                               {" "}
                               <SkillStatusBadge status={e.status} />

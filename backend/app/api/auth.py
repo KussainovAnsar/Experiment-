@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -12,9 +12,14 @@ from app.logging import get_logger
 from app.schemas.api import LoginRequest, RegisterCenterRequest, StaffUserOut, TokenResponse
 from app.services.audit import audit
 from app.services.auth import create_staff_token, hash_password, verify_password
+from app.services.ratelimit import rate_limited
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 log = get_logger(__name__)
+
+# Brute-force / abuse limits for the anonymous endpoints (in-process; see services/ratelimit.py).
+_login_limit = rate_limited("login", per_ip=(10, 60.0), per_body_key=("email", 5, 60.0))
+_register_limit = rate_limited("register_center", per_ip=(5, 60.0))
 
 
 def staff_to_dto(user: StaffUser, center: Center) -> StaffUserOut:
@@ -30,9 +35,9 @@ def staff_to_dto(user: StaffUser, center: Center) -> StaffUserOut:
     )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(_login_limit)])
 async def login(body: LoginRequest, session: DbSession) -> TokenResponse:
-    """Exchange email + password for a staff JWT."""
+    """Exchange email + password for a staff JWT (10/min per IP, 5/min per e-mail)."""
     email = body.email.lower().strip()
     result = await session.execute(select(StaffUser).where(func.lower(StaffUser.email) == email))
     user = result.scalar_one_or_none()
@@ -46,9 +51,14 @@ async def login(body: LoginRequest, session: DbSession) -> TokenResponse:
     return TokenResponse(access_token=create_staff_token(user), user=staff_to_dto(user, center))
 
 
-@router.post("/register-center", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register-center",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(_register_limit)],
+)
 async def register_center(body: RegisterCenterRequest, session: DbSession) -> TokenResponse:
-    """Self-service registration: creates a centre and its owner account, returns a token."""
+    """Self-service registration: creates a centre and its owner account, returns a token (5/min per IP)."""
     email = body.email.lower().strip()
     exists = await session.execute(select(StaffUser.id).where(func.lower(StaffUser.email) == email))
     if exists.scalar_one_or_none() is not None:

@@ -12,6 +12,7 @@
 | base (whisper-onnx) | 33.6% | 36.8% | 94.2% | 80.1% | 77.3% | 91.7% | 75.7% | 0.20 |
 | small (whisper-onnx) | 20.2% | 25.4% | 78.8% | 74.0% | 74.6% | 101.1% | 71.3% | 0.54 |
 | medium (whisper-onnx) | 18.2% | 16.6% | 67.2% | 66.8% | 66.8% | 88.9% | 68.0% | 1.98 |
+| large-v3-turbo (whisper-onnx) | 13.0% | 13.0% | 42.3% | 58.0% | 56.9% | 69.1% | 59.1% | 0.78 |
 | tiny (sherpa-onnx) | 45.9% | 49.2% | 97.1% | 75.7% | 74.6% | 90.1% | 86.2% | 0.09 |
 | base (sherpa-onnx) | 35.8% | 32.6% | 97.1% | 76.8% | 76.8% | 97.2% | 80.1% | 0.13 |
 | small (sherpa-onnx) | 23.1% | 25.1% | 92.7% | 74.0% | 71.3% | 92.3% | 74.0% | 0.41 |
@@ -61,6 +62,16 @@
 | medium | whisper-onnx | mixed | clean | auto | 30 | 66.8% | 41.0% | 1.45 | ru:20, kk:8, az:1, mk:1 |
 | medium | whisper-onnx | mixed | degraded | forced:ru | 30 | 70.7% | 47.1% | 1.71 | ru:30 |
 | medium | whisper-onnx | mixed | degraded | auto | 30 | 68.0% | 42.3% | 1.70 | ru:22, kk:8 |
+| large-v3-turbo | whisper-onnx | ru | clean | forced:ru | 32 | 13.0% | 4.4% | 0.78 | ru:32 |
+| large-v3-turbo | whisper-onnx | ru | clean | auto | 32 | 13.0% | 4.4% | 0.20 | ru:32 |
+| large-v3-turbo | whisper-onnx | ru | degraded | forced:ru | 32 | 13.0% | 4.7% | 0.78 | ru:32 |
+| large-v3-turbo | whisper-onnx | kk | clean | forced:kk | 30 | 42.3% | 10.5% | 1.61 | kk:30 |
+| large-v3-turbo | whisper-onnx | kk | clean | auto | 30 | 42.3% | 10.5% | 0.44 | kk:30 |
+| large-v3-turbo | whisper-onnx | mixed | clean | forced:ru | 30 | 56.9% | 32.0% | 0.87 | ru:30 |
+| large-v3-turbo | whisper-onnx | mixed | clean | forced:kk | 30 | 69.1% | 40.0% | 0.28 | kk:30 |
+| large-v3-turbo | whisper-onnx | mixed | clean | auto | 30 | 58.0% | 31.0% | 0.24 | kk:17, ru:13 |
+| large-v3-turbo | whisper-onnx | mixed | degraded | forced:ru | 30 | 60.8% | 36.1% | 0.92 | ru:30 |
+| large-v3-turbo | whisper-onnx | mixed | degraded | auto | 30 | 59.1% | 31.3% | 0.24 | ru:17, kk:13 |
 | tiny | sherpa-onnx | ru | clean | forced:ru | 32 | 45.9% | 17.9% | 0.09 | ru:32 |
 | tiny | sherpa-onnx | ru | clean | auto | 32 | 45.9% | 17.9% | 0.09 | ru:32 |
 | tiny | sherpa-onnx | ru | degraded | forced:ru | 32 | 49.2% | 18.8% | 0.08 | ru:32 |
@@ -110,6 +121,7 @@
 | base (whisper-onnx) | ru:24, tr:4, lt:1, ja:1 |
 | small (whisper-onnx) | ru:26, tr:2, kk:1, bs:1 |
 | medium (whisper-onnx) | ru:20, kk:8, az:1, mk:1 |
+| large-v3-turbo (whisper-onnx) | kk:17, ru:13 |
 | tiny (sherpa-onnx) | ru:26, da:1, tr:1, de:1, sk:1 |
 | base (sherpa-onnx) | ru:23, tr:2, kk:1, lt:1, la:1, uk:1, ja:1 |
 | small (sherpa-onnx) | ru:23, kk:3, lt:2, tr:1, uk:1 |

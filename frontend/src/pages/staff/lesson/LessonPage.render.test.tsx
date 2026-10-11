@@ -1,7 +1,7 @@
 /**
  * Render test for the authenticated lesson page against real backend JSON (captured fixtures from the
  * pipeline run with mock providers). Verifies that every tab renders without runtime errors and that
- * timecodes / frame thumbnails carry the access_token query parameter.
+ * media URLs carry the short-lived media token (never the session JWT) in the access_token query parameter.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -25,6 +25,15 @@ declare global {
 }
 
 const LESSON_ID = (lesson as { id: string }).id;
+const MEDIA_TOKEN = "media.scoped.token";
+const FAILED_LESSON = {
+  ...(lesson as Record<string, unknown>),
+  status: "failed",
+  stage_index: null,
+  status_message: "Ответ модели анализа не прошёл валидацию (этап: анализируем урок)",
+  error: "[analyzing] ValidationError: 3 validation errors for LessonAnalysis\nlesson_summary\n  Field required",
+};
+let lessonBody: unknown = lesson;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -34,7 +43,12 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   const path = url.split("?")[0] ?? url;
   if (path === "/api/auth/me") return Promise.resolve(jsonResponse(me));
-  if (path === `/api/lessons/${LESSON_ID}`) return Promise.resolve(jsonResponse(lesson));
+  if (path === `/api/lessons/${LESSON_ID}`) return Promise.resolve(jsonResponse(lessonBody));
+  if (path === `/api/lessons/${LESSON_ID}/media-token`) {
+    return Promise.resolve(
+      jsonResponse({ access_token: MEDIA_TOKEN, token_type: "bearer", lesson_id: LESSON_ID, expires_at: "2099-01-01T00:00:00Z" }),
+    );
+  }
   if (path === `/api/lessons/${LESSON_ID}/analysis`) return Promise.resolve(jsonResponse(analysis));
   if (path === `/api/lessons/${LESSON_ID}/reports`) return Promise.resolve(jsonResponse(reports));
   if (path === `/api/lessons/${LESSON_ID}/frames`) return Promise.resolve(jsonResponse(frames));
@@ -88,6 +102,7 @@ afterEach(async () => {
   container?.remove();
   root = null;
   container = null;
+  lessonBody = lesson;
   window.localStorage.clear();
 });
 
@@ -107,11 +122,19 @@ describe("LessonPage with real backend fixtures", () => {
     expect(text).toContain("Эпизоды с ошибками");
     expect(text).toContain("Рекомендации");
     expect(text).toContain("Замечено на экране");
-    // media URLs carry the token for <img>/<video>
+    // media URLs carry the lesson-scoped media token for <img>/<video>, never the session JWT
     const video = el.querySelector("video");
-    expect(video?.getAttribute("src")).toContain(`/api/media/lessons/${LESSON_ID}/source?access_token=test.staff.jwt`);
+    expect(video?.getAttribute("src")).toContain(`/api/media/lessons/${LESSON_ID}/source?access_token=${MEDIA_TOKEN}`);
     const img = el.querySelector(".frame-strip img");
-    expect(img?.getAttribute("src")).toContain("access_token=test.staff.jwt");
+    expect(img?.getAttribute("src")).toContain(`access_token=${MEDIA_TOKEN}`);
+    expect(el.innerHTML).not.toContain("test.staff.jwt");
+    // episodes come from the stored report: re-explanation and correction are shown as independent facts
+    const flow = el.querySelector(".episode-flow")?.textContent ?? "";
+    expect(flow).toContain("Переобъяснение в 00:31");
+    expect(flow).toContain("Исправлена");
+    // misconception headings use the Russian skill name, not the slug
+    expect(text).toContain("Правописание -тся / -ться");
+    expect(text).not.toMatch(/tsya tsa|padezhnye okonchaniya/);
     // at least one clickable timecode exists and seeking does not throw
     const tc = el.querySelector<HTMLButtonElement>("button.timecode");
     expect(tc).not.toBeNull();
@@ -130,6 +153,27 @@ describe("LessonPage with real backend fixtures", () => {
     expect(text).toContain("Требуется разбор методиста");
     expect(text).toContain("Доли речи");
     expect(text).toContain("Хронология урока");
+    // «Показатели» of the stored report are labelled in Russian — no raw English keys
+    expect(text).toContain("Переобъяснений");
+    expect(text).toContain("Самостоятельных успехов");
+    expect(text).not.toMatch(/re explanations|independent successes|misconceptions strong|errors repeated after/);
+    // «Трудности выявлены» is an informational card, not a red failure
+    const difficulties = Array.from(el.querySelectorAll(".indicator")).find((n) => n.textContent?.includes("Трудности выявлены"));
+    expect(difficulties?.className).toContain("indicator-neutral");
+    expect(difficulties?.className).not.toContain("indicator-bad");
+  });
+
+  it("shows the Russian status_message for a failed lesson and hides the technical error in details", async () => {
+    login();
+    lessonBody = FAILED_LESSON;
+    const el = await mountLesson();
+    const box = el.querySelector(".error-box");
+    expect(box?.textContent).toContain("Ответ модели анализа не прошёл валидацию");
+    const details = box?.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details?.hasAttribute("open")).toBe(false);
+    expect(details?.textContent).toContain("ValidationError");
+    expect(box?.textContent?.indexOf("Ответ модели")).toBeLessThan(box?.textContent?.indexOf("ValidationError") ?? -1);
   });
 
   it("renders the parent tab with the report, Telegram preview and send button", async () => {

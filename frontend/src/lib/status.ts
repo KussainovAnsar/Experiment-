@@ -76,6 +76,14 @@ export const NOTIFICATION_STATUS_META: Record<NotificationStatus, { label: strin
   skipped: { label: "Пропущено", tone: "neutral" },
 };
 
+/** Russian text for notification `payload.reason` slugs (services/notifications.py). */
+export const NOTIFICATION_REASON_LABELS: Record<string, string> = {
+  telegram_not_linked: "Telegram не подключён",
+  whatsapp_phone_missing: "Нет номера WhatsApp",
+  channel_none: "Уведомления отключены",
+  provider_not_configured: "Бот не настроен",
+};
+
 export const CHANNEL_LABELS: Record<string, string> = {
   telegram: "Telegram",
   whatsapp: "WhatsApp",

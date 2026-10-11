@@ -61,9 +61,9 @@ def _file_or_404(raw_path: str | None, entity: str) -> Path:
 
 @router.get("/frames/{frame_id}")
 async def get_frame(frame_id: uuid.UUID, principal: CurrentMediaPrincipal, session: DbSession) -> FileResponse:
-    """JPEG keyframe. Accepts the JWT in the header or ``?access_token=`` (for <img> tags)."""
+    """JPEG keyframe. Session JWT in the header, or a lesson-scoped media token in ``?access_token=`` (<img>)."""
     frame = await session.get(Frame, frame_id)
-    if frame is None:
+    if frame is None or not principal.allows_lesson(frame.lesson_id):
         raise not_found("Кадр")
     lesson = await session.get(Lesson, frame.lesson_id)
     if lesson is None or not await _lesson_visible(session, principal, lesson):
@@ -77,6 +77,8 @@ async def get_source(lesson_id: uuid.UUID, principal: CurrentMediaPrincipal, ses
     """Original recording (staff only). Supports range requests via FileResponse."""
     if principal.staff is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ только для сотрудников центра")
+    if not principal.allows_lesson(lesson_id):
+        raise not_found("Урок")
     lesson = await session.get(Lesson, lesson_id)
     if lesson is None or not await _lesson_visible(session, principal, lesson):
         raise not_found("Урок")

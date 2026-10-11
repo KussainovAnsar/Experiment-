@@ -6,8 +6,9 @@ raise on provider problems. Nothing is committed here — the caller (pipeline r
 Dependencies on other modules are resolved lazily and by signature: ``app.services.auth.create_magic_link``
 (module A; a local fallback with identical semantics exists) and
 ``app.pipeline.reports.render_parent_report_telegram_html`` (module B2; a minimal built-in renderer is the
-fallback). The magic link itself is never stored in ``notifications.payload`` for report notifications; an
-invite that could not be delivered keeps the link in its payload on purpose so staff can forward it by hand.
+fallback). The magic link itself is never stored in ``notifications.payload``: for an invite that could not be
+delivered the fresh portal URL is attached to the returned object as the transient attribute ``portal_url`` (the
+API hands it to the manager for manual forwarding) while the row only records ``has_portal_link``.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ def first_name(full_name: str | None) -> str | None:
 
 
 def _hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode("ascii")).hexdigest()
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 async def _local_create_magic_link(session: AsyncSession, parent: Parent, *, purpose: str = "portal") -> str:
@@ -246,7 +247,9 @@ async def _deliver(
         notification.payload = {**notification.payload, "reason": skip_reason, "has_portal_link": False}
         if keep_link_when_skipped:
             try:
-                notification.payload["magic_url"] = await portal_link_for(session, parent)
+                # Transient: the live URL is returned to the caller, only the fact is persisted (a DB dump must
+                # not contain working portal credentials).
+                notification.portal_url = await portal_link_for(session, parent)  # type: ignore[attr-defined]
                 notification.payload["has_portal_link"] = True
             except Exception as exc:  # pragma: no cover - defensive; DB errors would surface at flush anyway
                 log.warning("magic_link_failed", parent_id=str(parent.id), error=str(exc)[:200])
@@ -383,8 +386,9 @@ async def send_parent_invite(session: AsyncSession, parent_id: uuid.UUID) -> Not
     """Send a welcome message with a portal magic link and the Telegram deep link via the preferred channel.
 
     When the parent prefers Telegram but has not opened the bot yet (``telegram_chat_id`` unknown) — or has
-    ``preferred_channel=none`` — the row is ``skipped`` and its payload carries ``deep_link`` and ``magic_url``
-    so staff can forward them manually. Flushed, not committed. Raises ``ValueError`` only for an unknown parent.
+    ``preferred_channel=none`` — the row is ``skipped``, its payload carries ``deep_link`` and the returned object
+    has the transient ``portal_url`` so staff can forward both manually. Flushed, not committed. Raises
+    ``ValueError`` only for an unknown parent.
     """
     parent = await session.get(Parent, parent_id)
     if parent is None:

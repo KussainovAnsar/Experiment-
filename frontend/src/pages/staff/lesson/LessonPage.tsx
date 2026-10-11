@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { useAnalysis, useFrames, useLesson, useReports, useReprocessLesson, useTranscript } from "@/api/queries";
+import {
+  useAnalysis,
+  useFrames,
+  useLesson,
+  useLessonMediaToken,
+  useReports,
+  useReprocessLesson,
+  useTranscript,
+} from "@/api/queries";
 import { lessonsApi } from "@/api/staff";
 import { useStaffAuth } from "@/auth/StaffAuth";
-import { withAccessToken } from "@/auth/storage";
-import { frameSrc, nearestFrame } from "@/components/FrameThumb";
+import { MediaTokenContext } from "@/auth/media";
+import { withMediaToken } from "@/auth/storage";
+import { nearestFrame } from "@/components/FrameThumb";
 import { StatusTimeline } from "@/components/StatusTimeline";
 import { Tabs, type TabItem } from "@/components/Tabs";
 import { useToast } from "@/components/Toast";
@@ -41,6 +50,9 @@ export function LessonPage() {
     lesson && ((lesson.stage_index ?? 0) >= 5 || lesson.status === "done" || lesson.status === "failed"),
   );
   const framesQ = useFrames(id, framesReady);
+  // Short-lived, lesson-scoped token for <img>/<video> URLs (never the session JWT; see auth/media.tsx).
+  const mediaTokenQ = useLessonMediaToken(id, Boolean(lesson));
+  const mediaToken = mediaTokenQ.data?.access_token ?? null;
   const analysisQ = useAnalysis(id, ready);
   const reportsQ = useReports(id, ready && (lesson?.report_kinds.length ?? 0) > 0);
   const reprocess = useReprocessLesson(id);
@@ -112,7 +124,7 @@ export function LessonPage() {
     el?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [activeFrame?.index]);
 
-  const sourceUrl = withAccessToken(lessonsApi.sourceUrl(id), "staff");
+  const sourceUrl = withMediaToken(lessonsApi.sourceUrl(id), mediaToken);
 
   if (lessonQ.isLoading) {
     return (
@@ -156,6 +168,7 @@ export function LessonPage() {
 
   return (
     <SeekContext.Provider value={seekValue}>
+      <MediaTokenContext.Provider value={mediaToken}>
       <BackLink to="/lessons">К списку уроков</BackLink>
       <PageHeader
         title={
@@ -214,10 +227,13 @@ export function LessonPage() {
 
         <aside>
           <div className="video-wrap">
-            {videoFailed ? (
+            {!mediaToken ? (
+              <div className="video-placeholder">Запись загружается…</div>
+            ) : videoFailed ? (
               <div className="video-placeholder">
                 Запись недоступна для просмотра в браузере.
                 <br />
+                {/* the link carries only the 10-minute lesson-scoped media token, never the session JWT */}
                 <a href={sourceUrl} target="_blank" rel="noreferrer" style={{ color: "#9db7ff" }}>
                   Скачать исходный файл
                 </a>
@@ -238,7 +254,7 @@ export function LessonPage() {
                     onClick={() => seek(f.timestamp_sec)}
                     title={`Кадр ${f.index} · ${formatTimecode(f.timestamp_sec)}`}
                   >
-                    <img src={frameSrc(f, "staff")} alt={`Кадр ${f.index}`} loading="lazy" />
+                    <img src={withMediaToken(f.url, mediaToken)} alt={`Кадр ${f.index}`} loading="lazy" />
                     <span>{formatTimecode(f.timestamp_sec)}</span>
                   </button>
                 ))}
@@ -253,6 +269,7 @@ export function LessonPage() {
           )}
         </aside>
       </div>
+      </MediaTokenContext.Provider>
     </SeekContext.Provider>
   );
 }

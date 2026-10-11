@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -211,7 +212,8 @@ def extract_audio(src: Path, dst: Path, *, ffmpeg_bin: str | None = None) -> Pat
     if not src.is_file():
         raise MediaError(f"extract_audio: file not found: {src}")
     dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_suffix(".tmp.wav")
+    # Per-run temp name: two runs on the same lesson must never share (and delete) each other's partial file.
+    tmp = dst.with_name(f"{dst.stem}.{os.getpid()}-{secrets.token_hex(4)}.tmp.wav")
     _run(
         [
             _ffmpeg_bin(ffmpeg_bin),

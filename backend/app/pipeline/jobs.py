@@ -54,6 +54,20 @@ async def enqueue(
     return job
 
 
+async def has_active_job(session: AsyncSession, kind: str, *, lesson_id: object) -> bool:
+    """True when a ``queued`` / ``running`` job of ``kind`` already carries ``payload.lesson_id`` (dedupe)."""
+    stmt = (
+        select(Job.id)
+        .where(
+            Job.kind == kind,
+            Job.status.in_([JobStatus.queued, JobStatus.running]),
+            Job.payload["lesson_id"].astext == str(lesson_id),
+        )
+        .limit(1)
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
 async def claim_next(session: AsyncSession, worker_id: str, *, kinds: list[str] | None = None) -> Job | None:
     """Atomically claim the oldest due job: mark it ``running`` and commit. ``None`` when nothing is due."""
     stmt = (

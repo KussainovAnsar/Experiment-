@@ -121,7 +121,8 @@ export interface LessonAnalysis {
   skills: SkillAssessment[];
   visual_observations: VisualObservation[];
   teacher_recommendations: TeacherRecommendation[];
-  manager_indicators: ManagerIndicators;
+  /** null when served to the `teacher` role (CONTRACT §6: teachers get no manager report). */
+  manager_indicators: ManagerIndicators | null;
   parent_report: ParentReportContent;
   limitations: string[];
   language_notes: string | null;

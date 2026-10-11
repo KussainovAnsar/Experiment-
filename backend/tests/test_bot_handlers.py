@@ -193,3 +193,55 @@ async def test_dispatcher_builds_and_bot_lifecycle_noop_when_disabled(monkeypatc
     await bot.stop_polling_background(app)
     assert bot.get_bot() is None
     get_settings.cache_clear()
+
+
+async def test_start_never_rebinds_a_bound_parent(seeded: Seed, session, mock_messaging: None) -> None:  # noqa: ANN001
+    """Knowing a parent's invite code must not hijack the reports: the parent stays bound to the first chat."""
+    attacker = FakeMessage(FakeChat(222000222))
+    await bot.handle_start(attacker, _start(seeded.code_tg))
+    assert attacker.texts == [bot.TEXT_CODE_ALREADY_USED]
+    assert attacker.answers[0][1] is None  # no portal button, no magic link issued
+    owner = await _parent(session, seeded.parent_tg_id)
+    assert owner.telegram_chat_id == seeded.chat_id
+    assert owner.invite_code == seeded.code_tg
+    links = (await session.execute(select(models.MagicLink).where(models.MagicLink.parent_id == owner.id))).scalars()
+    assert list(links) == []
+
+
+async def test_start_rotates_invite_code_and_old_link_still_greets(
+    seeded: Seed, session, mock_messaging: None  # noqa: ANN001
+) -> None:
+    chat = 555777
+    first = FakeMessage(FakeChat(chat))
+    await bot.handle_start(first, _start(seeded.code_tg_unbound))
+    assert "Telegram подключён" in first.texts[0]
+    parent = await _parent(session, seeded.parent_tg_unbound_id)
+    assert parent.telegram_chat_id == chat
+    assert parent.invite_code != seeded.code_tg_unbound and len(parent.invite_code) == 8  # single-use code
+
+    # the forwarded / cached deep link with the OLD code: the bound chat is greeted, anyone else gets "not found"
+    again = FakeMessage(FakeChat(chat))
+    await bot.handle_start(again, _start(seeded.code_tg_unbound))
+    assert "уже был подключён" in again.texts[0]
+    stranger = FakeMessage(FakeChat(999000111))
+    await bot.handle_start(stranger, _start(seeded.code_tg_unbound))
+    assert "не найден" in stranger.texts[0]
+    assert (await _parent(session, seeded.parent_tg_unbound_id)).telegram_chat_id == chat
+
+
+async def test_start_throttles_code_guessing(seeded: Seed, mock_messaging: None) -> None:
+    bot.reset_code_misses()
+    try:
+        chat = 31415926
+        for i in range(bot.MAX_CODE_MISSES):
+            msg = FakeMessage(FakeChat(chat))
+            await bot.handle_start(msg, _start(f"GUESS{i:03d}"))
+            assert "не найден" in msg.texts[0]
+        blocked = FakeMessage(FakeChat(chat))
+        await bot.handle_start(blocked, _start(seeded.code_tg_unbound))  # even a valid code is ignored now
+        assert blocked.texts == [bot.TEXT_TOO_MANY_ATTEMPTS]
+        other_chat = FakeMessage(FakeChat(27182818))
+        await bot.handle_start(other_chat, _start("GUESS999"))
+        assert "не найден" in other_chat.texts[0]  # per-chat counter
+    finally:
+        bot.reset_code_misses()

@@ -50,9 +50,15 @@ export function StatusTimeline({ lesson }: { lesson: Lesson }) {
       )}
       {failed && (
         <div className="error-box mt-4" role="alert">
-          <span>
-            <strong>Ошибка обработки.</strong> {error || status_message || "Причина не указана."}
-          </span>
+          <div style={{ minWidth: 0 }}>
+            <strong>Ошибка обработки.</strong> {status_message || "Причина не указана."}
+            {error && (
+              <details className="mt-2">
+                <summary className="small">Технические подробности</summary>
+                <pre className="xs mt-2 mb-0" style={{ whiteSpace: "pre-wrap" }}>{error}</pre>
+              </details>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -10,7 +10,7 @@
   },
   {
     "index": 1,
-    "timestamp_sec": 165.0,
+    "timestamp_sec": 160.0,
     "reason": "scene",
     "caption": "Титульный слайд: тема и цель урока",
     "file": "0001.jpg",
@@ -19,7 +19,7 @@
   },
   {
     "index": 2,
-    "timestamp_sec": 255.0,
+    "timestamp_sec": 200.0,
     "reason": "scene",
     "caption": "Таблица окончаний дательного и предложного падежа",
     "file": "0002.jpg",
@@ -28,7 +28,7 @@
   },
   {
     "index": 3,
-    "timestamp_sec": 705.0,
+    "timestamp_sec": 676.0,
     "reason": "scene",
     "caption": "Слайд «Куда? или Где?» — направление и место",
     "file": "0003.jpg",
@@ -37,7 +37,7 @@
   },
   {
     "index": 4,
-    "timestamp_sec": 940.0,
+    "timestamp_sec": 932.0,
     "reason": "scene",
     "caption": "Упражнение 2: шесть предложений с пропусками",
     "file": "0004.jpg",
@@ -46,7 +46,7 @@
   },
   {
     "index": 5,
-    "timestamp_sec": 1180.0,
+    "timestamp_sec": 1168.0,
     "reason": "scene",
     "caption": "Доска: разбор ошибки «иду в школе», параллели с казахским",
     "file": "0005.jpg",
@@ -55,7 +55,7 @@
   },
   {
     "index": 6,
-    "timestamp_sec": 1260.0,
+    "timestamp_sec": 1256.0,
     "reason": "scene",
     "caption": "Упражнение 3 в документе: шесть предложений (пустые)",
     "file": "0006.jpg",
@@ -64,7 +64,7 @@
   },
   {
     "index": 7,
-    "timestamp_sec": 1420.0,
+    "timestamp_sec": 1330.0,
     "reason": "scene",
     "caption": "Упражнение 3: напечатанные ответы ученика, №5 выделено",
     "file": "0007.jpg",
@@ -73,7 +73,7 @@
   },
   {
     "index": 8,
-    "timestamp_sec": 1625.0,
+    "timestamp_sec": 1590.0,
     "reason": "scene",
     "caption": "Упражнение 4: напечатано «хочет учится» (ошибка -тся/-ться)",
     "file": "0008.jpg",
@@ -82,7 +82,7 @@
   },
   {
     "index": 9,
-    "timestamp_sec": 1725.0,
+    "timestamp_sec": 1700.0,
     "reason": "scene",
     "caption": "Упражнение 4: исправлено «учиться», правило проверки вопросом",
     "file": "0009.jpg",
@@ -91,7 +91,7 @@
   },
   {
     "index": 10,
-    "timestamp_sec": 1860.0,
+    "timestamp_sec": 1846.0,
     "reason": "scene",
     "caption": "Итоги урока: четыре правила",
     "file": "0010.jpg",
@@ -100,7 +100,7 @@
   },
   {
     "index": 11,
-    "timestamp_sec": 2010.0,
+    "timestamp_sec": 1962.0,
     "reason": "scene",
     "caption": "Домашнее задание и следующий урок",
     "file": "0011.jpg",

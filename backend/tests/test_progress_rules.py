@@ -223,3 +223,80 @@ async def test_student_progress_summary(session: AsyncSession) -> None:
         assert empty["skills"] == [] and empty["lessons"] == [] and empty["counts"]["struggling"] == 0
     finally:
         await cleanup(session, center.id)
+
+
+async def test_long_skill_key_is_normalised_not_fatal(session: AsyncSession) -> None:
+    """A 96-character slug from the LLM must not fail the lesson with a varchar(80) error."""
+    g = await create_graph(session)
+    center, lesson1 = g["center"], g["lesson"]
+    try:
+        long_key = "ochen_dlinnyy_klyuch_navyka_" + "x" * 70
+        a = analysis_with_skill(long_key, "Очень длинный навык", "developing", with_error=True)
+        row = await create_analysis_row(session, lesson1, a)
+        touched = await update_progress(session, lesson1, row)
+        await session.commit()
+        assert len(touched) == 1 and len(touched[0].skill_key) == 80
+        assert touched[0].skill_key == long_key[:80]
+        assert touched[0].times_struggled == 1
+    finally:
+        await cleanup(session, center.id)
+
+
+async def test_reprocess_removes_skills_the_new_analysis_no_longer_mentions(session: AsyncSession) -> None:
+    g = await create_graph(session)
+    center, teacher, student, lesson1 = g["center"], g["teacher"], g["student"], g["lesson"]
+    try:
+        kuda, tsya = ("kuda_vs_gde", "Выбор падежа: куда? / где?"), ("tsya_tsa", "Правописание -тся / -ться")
+        lesson0 = await create_lesson(session, center, teacher, student, later(lesson1.scheduled_at, -7))
+        a0 = await create_analysis_row(session, lesson0, analysis_with_skill(*kuda, "developing"))
+        await update_progress(session, lesson0, a0)
+        a1 = await create_analysis_row(session, lesson1, analysis_with_skill(*kuda, "struggling", with_error=True))
+        await update_progress(session, lesson1, a1)
+        await session.commit()
+        st = await _state(session, student.id, kuda[0])
+        assert st.times_seen == 2 and st.times_struggled == 1 and st.status == SkillStatus.struggling
+
+        # re-analysis of lesson1: only -тся/-ться observed → kuda_vs_gde keeps lesson0 only, no phantom evidence
+        a1.data = analysis_with_skill(*tsya, "developing").model_dump(mode="json")
+        await session.flush()
+        touched = await update_progress(session, lesson1, a1)
+        await session.commit()
+        assert {s.skill_key for s in touched} == {kuda[0], tsya[0]}
+        st = await _state(session, student.id, kuda[0])
+        assert st.times_seen == 1 and st.times_struggled == 0 and st.status == SkillStatus.developing
+        assert st.last_seen_lesson_id == lesson0.id
+        assert all(e["lesson_id"] == str(lesson0.id) for e in st.evidence)
+
+        # re-analysis of lesson0 without the skill at all → the state disappears (no evidence left)
+        a0.data = analysis_with_skill(*tsya, "developing").model_dump(mode="json")
+        await session.flush()
+        await update_progress(session, lesson0, a0)
+        await session.commit()
+        keys = (
+            await session.execute(select(SkillState.skill_key).where(SkillState.student_id == student.id))
+        ).scalars().all()
+        assert keys == [tsya[0]]
+    finally:
+        await cleanup(session, center.id)
+
+
+async def test_times_seen_is_exact_beyond_the_evidence_cap(session: AsyncSession) -> None:
+    g = await create_graph(session)
+    center, teacher, student, lesson1 = g["center"], g["teacher"], g["student"], g["lesson"]
+    try:
+        key, name = SKILL
+        lessons = [lesson1]
+        for day in range(1, MAX_EVIDENCE + 3):
+            lessons.append(await create_lesson(session, center, teacher, student, later(lesson1.scheduled_at, day)))
+        for lesson in lessons:
+            row = await create_analysis_row(session, lesson, analysis_with_skill(key, name, "developing"))
+            await update_progress(session, lesson, row)
+        await session.commit()
+        st = await _state(session, student.id, key)
+        assert st.times_seen == len(lessons) == MAX_EVIDENCE + 3
+        assert st.first_seen_lesson_id == lesson1.id and st.last_seen_lesson_id == lessons[-1].id
+        summaries = [e for e in st.evidence if e["kind"] == "summary"]
+        assert len(summaries) == len(lessons)  # one per lesson, never trimmed
+        assert len(st.evidence) - len(summaries) <= MAX_EVIDENCE
+    finally:
+        await cleanup(session, center.id)

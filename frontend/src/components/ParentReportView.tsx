@@ -2,10 +2,10 @@
  * Parent report rendered "as the parent sees it". Used by the staff lesson page (parent tab)
  * and by the parent portal. Data shape is produced by another module → rendered defensively.
  */
+import { useMediaUrl } from "@/auth/media";
 import { formatDateLong } from "@/lib/format";
 import type { ParentFrame, ParentReportData } from "@/types/api";
-import type { Realm } from "@/auth/storage";
-import { FrameInline, frameSrc } from "./FrameThumb";
+import { FrameInline } from "./FrameThumb";
 import { SkillChip, StringList } from "./ui";
 
 function asStringArray(v: unknown): string[] {
@@ -19,16 +19,16 @@ function asString(v: unknown): string | null {
 export function ParentReportView({
   data,
   frames,
-  realm = "parent",
   teacherName,
   scheduledAt,
 }: {
   data: ParentReportData | Record<string, unknown> | null | undefined;
+  /** Frames the report points at (errors, successes, visual issues) — already filtered by the API. */
   frames?: ParentFrame[];
-  realm?: Realm;
   teacherName?: string;
   scheduledAt?: string;
 }) {
+  const mediaUrl = useMediaUrl();
   if (!data) {
     return <p className="muted">Отчёт для родителя ещё не сформирован.</p>;
   }
@@ -56,7 +56,7 @@ export function ParentReportView({
           {teacherName ? ` · преподаватель ${teacherName}` : ""}
         </span>
         <h2 style={{ marginTop: 6 }}>{topic ?? "Тема урока"}</h2>
-        {childName && <p className="muted mb-0">Отчёт о занятии: {childName}</p>}
+        {childName && <p className="muted mb-0">Ребёнок: {childName}</p>}
       </div>
 
       {didWell.length > 0 && (
@@ -79,7 +79,7 @@ export function ParentReportView({
           <StringList items={toRepeat} />
           {homeTask && (
             <p className="mt-2 mb-0">
-              <strong>Задание на 10–15 минут:</strong> {homeTask}
+              <strong>Домашнее задание:</strong> {homeTask}
             </p>
           )}
         </div>
@@ -121,9 +121,15 @@ export function ParentReportView({
       {frames && frames.length > 0 && (
         <div className="section">
           <h3>Моменты урока</h3>
-          <div className="row">
+          <p className="xs faint mt-0">Кадры экрана, о которых идёт речь в отчёте. Нажмите, чтобы открыть крупнее.</p>
+          <div className="row parent-moments">
             {frames.slice(0, 6).map((f) => (
-              <FrameInline key={f.index} frame={f} realm={realm} onClick={() => window.open(frameSrc(f, realm), "_blank", "noopener")} />
+              <FrameInline
+                key={f.index}
+                frame={f}
+                caption={f.caption ?? "Момент урока"}
+                onClick={() => window.open(mediaUrl(f.url), "_blank", "noopener")}
+              />
             ))}
           </div>
         </div>

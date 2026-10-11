@@ -1,26 +1,111 @@
-/** "Для учителя": episodes (error → re-explanation → repeated), recommendations, visual issues. */
+/** "Для учителя": episodes (error → re-explanation → repeated after it → corrected), recommendations, visual issues. */
 import { FrameRefs, FrameInline } from "@/components/FrameThumb";
 import { Timecode } from "@/components/Timecode";
 import { Badge, EmptyState, Skeleton, SkillChip } from "@/components/ui";
 import { formatTimecode } from "@/lib/format";
 import type { Frame, Report } from "@/types/api";
-import { PRIORITY_LABELS, SIGNAL_STRENGTH_LABELS, type LessonAnalysis, type StudentError, type TeachingEvent } from "@/types/analysis";
+import { PRIORITY_LABELS, SIGNAL_STRENGTH_LABELS, type LessonAnalysis, type StudentError } from "@/types/analysis";
 import { ReportDataView, ReportMarkdown } from "./ReportData";
 
-interface Episode {
-  error: StudentError;
-  reExplanation: TeachingEvent | null;
+/** One error episode as the teacher report tells it. Mirrors `build_episodes` in backend/app/pipeline/reports.py. */
+export interface EpisodeView {
+  timestamp: number;
+  skillName: string;
+  description: string;
+  quote: string | null;
+  frameIds: number[];
+  /** The re-explanation attributed to this error (same skill, within the window), if any. */
+  reExplanation: { timestamp: number; summary: string } | null;
+  /** The LLM's own flag: this error itself happened after the rule had already been explained. */
+  repeatedAfterExplanation: boolean;
+  /** Timecode of the next same-skill error AFTER the attributed re-explanation (never claimed without one). */
+  repeatedAt: string | null;
+  corrected: boolean;
 }
 
-/** Pair each error with the first re-explanation that follows it (within the lesson). */
-function buildEpisodes(a: LessonAnalysis): Episode[] {
+/** A re-explanation this far after an error is still attributed to it (same value as the backend). */
+export const RE_EXPLANATION_WINDOW_SEC = 900;
+
+/**
+ * Fallback when the stored teacher report is not available yet: the same attribution rule as the backend —
+ * the first re-explanation within the window after the error, unless an error of a *different* skill happened
+ * in between (then the teacher was re-explaining that one), and a repeat only after the re-explanation.
+ */
+export function episodesFromAnalysis(a: LessonAnalysis): EpisodeView[] {
+  const errors = [...a.errors].sort((x, y) => x.timestamp - y.timestamp);
   const reExplanations = a.timeline.filter((e) => e.kind === "re_explanation").sort((x, y) => x.start - y.start);
-  return [...a.errors]
-    .sort((x, y) => x.timestamp - y.timestamp)
-    .map((error) => ({
-      error,
-      reExplanation: reExplanations.find((e) => e.start >= error.timestamp) ?? null,
-    }));
+  const findReExplanation = (error: StudentError) =>
+    reExplanations.find(
+      (ev) =>
+        ev.start >= error.timestamp &&
+        ev.start <= error.timestamp + RE_EXPLANATION_WINDOW_SEC &&
+        !errors.some((o) => o.timestamp > error.timestamp && o.timestamp <= ev.start && o.skill_key !== error.skill_key),
+    ) ?? null;
+  return errors.map((error, i) => {
+    const re = findReExplanation(error);
+    const laterSame = errors.slice(i + 1).filter((e) => e.skill_key === error.skill_key);
+    const repeated = re ? laterSame.find((e) => e.timestamp > re.start) : undefined;
+    return {
+      timestamp: error.timestamp,
+      skillName: error.skill_name,
+      description: error.description,
+      quote: error.quote,
+      frameIds: error.frame_ids,
+      reExplanation: re ? { timestamp: re.start, summary: re.summary } : null,
+      repeatedAfterExplanation: error.repeated_after_explanation,
+      repeatedAt: repeated ? formatTimecode(repeated.timestamp) : null,
+      corrected: error.corrected,
+    };
+  });
+}
+
+/** Episodes from the stored teacher report (`report.data.episodes`), rendered defensively. */
+export function episodesFromReport(data: Record<string, unknown> | undefined): EpisodeView[] | null {
+  const raw = data?.episodes;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: EpisodeView[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const ep = item as Record<string, unknown>;
+    if (typeof ep.timestamp !== "number") continue;
+    const re = ep.re_explanation;
+    const reObj = typeof re === "object" && re !== null ? (re as Record<string, unknown>) : null;
+    const frames = Array.isArray(ep.frames) ? ep.frames : [];
+    out.push({
+      timestamp: ep.timestamp,
+      skillName: typeof ep.skill_name === "string" ? ep.skill_name : String(ep.skill_key ?? ""),
+      description: typeof ep.description === "string" ? ep.description : "",
+      quote: typeof ep.quote === "string" ? ep.quote : null,
+      frameIds: frames
+        .map((f) => (typeof f === "object" && f !== null ? (f as Record<string, unknown>).index : undefined))
+        .filter((i): i is number => typeof i === "number"),
+      reExplanation:
+        reObj && typeof reObj.timestamp === "number"
+          ? { timestamp: reObj.timestamp, summary: typeof reObj.summary === "string" ? reObj.summary : "" }
+          : null,
+      repeatedAfterExplanation: ep.repeated_after_explanation === true,
+      repeatedAt: typeof ep.repeated_at === "string" ? ep.repeated_at : null,
+      corrected: ep.corrected === true,
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** Russian skill names by key from the analysis (skills, errors) and the report's misconceptions. */
+function skillNameMap(a: LessonAnalysis, report: Report | undefined): Map<string, string> {
+  const names = new Map<string, string>();
+  const misconceptions = report?.data.misconceptions;
+  if (Array.isArray(misconceptions)) {
+    for (const m of misconceptions) {
+      if (typeof m === "object" && m !== null) {
+        const r = m as Record<string, unknown>;
+        if (typeof r.skill_key === "string" && typeof r.skill_name === "string") names.set(r.skill_key, r.skill_name);
+      }
+    }
+  }
+  for (const e of a.errors) names.set(e.skill_key, e.skill_name);
+  for (const s of a.skills) names.set(s.skill_key, s.skill_name);
+  return names;
 }
 
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } as const;
@@ -51,7 +136,9 @@ export function TeacherTab({
     );
   }
 
-  const episodes = buildEpisodes(analysis);
+  // The stored report is the source of truth for the episode chain; recompute only while it is missing.
+  const episodes = episodesFromReport(report?.data) ?? episodesFromAnalysis(analysis);
+  const skillNames = skillNameMap(analysis, report);
   const recommendations = [...analysis.teacher_recommendations].sort(
     (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority],
   );
@@ -95,38 +182,38 @@ export function TeacherTab({
         {episodes.length === 0 ? (
           <p className="muted">Ошибок ученика в этом уроке не зафиксировано.</p>
         ) : (
-          episodes.map(({ error, reExplanation }, i) => (
+          episodes.map((ep, i) => (
             <article
               key={i}
-              className={`episode${error.corrected ? " corrected" : ""}${error.repeated_after_explanation ? " repeated" : ""}`}
+              className={`episode${ep.corrected ? " corrected" : ""}${ep.repeatedAfterExplanation || ep.repeatedAt ? " repeated" : ""}`}
             >
               <div className="row">
-                <Timecode seconds={error.timestamp} />
-                <strong>{error.skill_name}</strong>
+                <Timecode seconds={ep.timestamp} />
+                <strong>{ep.skillName}</strong>
               </div>
-              <p className="mb-0 mt-2">{error.description}</p>
-              {error.quote && <p className="quote">«{error.quote}»</p>}
+              <p className="mb-0 mt-2">{ep.description}</p>
+              {ep.quote && <p className="quote">«{ep.quote}»</p>}
+              {/* Three independent facts: when it happened, whether it was re-explained, whether it was fixed. */}
               <div className="episode-flow">
                 <Badge tone="danger">Ошибка</Badge>
+                {ep.repeatedAfterExplanation && <Badge tone="warning">после объяснения</Badge>}
                 <span className="faint">→</span>
-                {reExplanation ? (
-                  <Badge tone="info">
-                    Переобъяснение в {formatTimecode(reExplanation.start)}
-                  </Badge>
+                {ep.reExplanation ? (
+                  <Badge tone="info">Переобъяснение в {formatTimecode(ep.reExplanation.timestamp)}</Badge>
                 ) : (
                   <Badge tone="neutral">Переобъяснения не было</Badge>
                 )}
-                <span className="faint">→</span>
-                {error.repeated_after_explanation ? (
-                  <Badge tone="warning">Ошибка повторилась</Badge>
-                ) : error.corrected ? (
-                  <Badge tone="success">Исправлена</Badge>
-                ) : (
-                  <Badge tone="neutral">Не исправлена</Badge>
+                {ep.repeatedAt && (
+                  <>
+                    <span className="faint">→</span>
+                    <Badge tone="warning">Повторилась в {ep.repeatedAt}</Badge>
+                  </>
                 )}
+                <span className="faint">→</span>
+                {ep.corrected ? <Badge tone="success">Исправлена</Badge> : <Badge tone="neutral">Не исправлена</Badge>}
               </div>
-              {reExplanation && <p className="small muted mt-2 mb-0">{reExplanation.summary}</p>}
-              <FrameRefs frameIds={error.frame_ids} frames={frames} />
+              {ep.reExplanation?.summary && <p className="small muted mt-2 mb-0">{ep.reExplanation.summary}</p>}
+              <FrameRefs frameIds={ep.frameIds} frames={frames} />
             </article>
           ))
         )}
@@ -167,7 +254,7 @@ export function TeacherTab({
             {analysis.misconceptions.map((m, i) => (
               <div key={i} className="card card-muted" style={{ padding: "10px 14px" }}>
                 <div className="row">
-                  <strong>{m.skill_key.replace(/_/g, " ")}</strong>
+                  <strong>{skillNames.get(m.skill_key) ?? m.skill_key.replace(/_/g, " ")}</strong>
                   <Badge tone={m.signal_strength === "strong" ? "danger" : m.signal_strength === "useful" ? "warning" : "neutral"}>
                     {SIGNAL_STRENGTH_LABELS[m.signal_strength]}
                   </Badge>

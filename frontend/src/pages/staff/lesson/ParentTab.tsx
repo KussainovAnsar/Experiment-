@@ -7,9 +7,48 @@ import { TelegramPreview } from "@/components/TelegramPreview";
 import { useToast } from "@/components/Toast";
 import { EmptyState, NotificationBadge, Skeleton } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
-import { CHANNEL_LABELS } from "@/lib/status";
-import type { Frame, Lesson, Notification, Report } from "@/types/api";
+import { CHANNEL_LABELS, NOTIFICATION_REASON_LABELS } from "@/lib/status";
+import type { Frame, Lesson, Notification, ParentFrame, Report } from "@/types/api";
 import type { LessonAnalysis } from "@/types/analysis";
+
+/** Human text for a delivery row: the Russian `error` when present, else the reason slug translated. */
+function describeNotification(n: Notification): string {
+  if (n.error) return ` · ${n.error}`;
+  const reason = typeof n.payload?.reason === "string" ? n.payload.reason : null;
+  if (!reason) return "";
+  return ` · ${NOTIFICATION_REASON_LABELS[reason] ?? "причина не указана"}`;
+}
+
+/**
+ * The same frames the parent portal shows: the ones the analysis points at (errors, successes, visual issues),
+ * in time order, with a plain caption — mirrors `select_parent_frames` in backend/app/api/parent.py.
+ */
+function selectParentFrames(analysis: LessonAnalysis | undefined, frames: Frame[]): ParentFrame[] {
+  if (!analysis) return [];
+  const byIndex = new Map(frames.map((f) => [f.index, f]));
+  const captions = new Map<number, string>();
+  const referenced = new Set<number>();
+  const high: number[] = [];
+  for (const v of analysis.visual_observations) {
+    const text = (v.issue ?? v.description ?? "").trim();
+    if (text && !captions.has(v.frame_id)) captions.set(v.frame_id, text);
+    if (v.relevance === "high") high.push(v.frame_id);
+    if (v.issue) referenced.add(v.frame_id);
+  }
+  for (const item of [...analysis.errors, ...analysis.independent_successes]) {
+    for (const id of item.frame_ids) {
+      referenced.add(id);
+      if (item.description && !captions.has(id)) captions.set(id, item.description);
+    }
+  }
+  const chosen = referenced.size > 0 ? referenced : new Set(high);
+  return [...chosen]
+    .map((id) => byIndex.get(id))
+    .filter((f): f is Frame => Boolean(f))
+    .sort((a, b) => a.timestamp_sec - b.timestamp_sec)
+    .slice(0, 6)
+    .map((f) => ({ index: f.index, timestamp_sec: f.timestamp_sec, url: f.url, caption: captions.get(f.index) ?? null }));
+}
 
 export function ParentTab({
   lesson,
@@ -38,7 +77,7 @@ export function ParentTab({
 
   // Prefer the stored report; fall back to the analysis' parent_report block.
   const data = report?.data ?? (analysis ? { ...analysis.parent_report, topic: analysis.topic } : null);
-  const parentFrames = frames.map((f) => ({ index: f.index, timestamp_sec: f.timestamp_sec, url: f.url }));
+  const parentFrames = selectParentFrames(analysis, frames);
 
   const doSend = async () => {
     setSendError(null);
@@ -53,10 +92,10 @@ export function ParentTab({
   };
 
   return (
-    <div className="lesson-layout" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 360px)" }}>
+    <div className="parent-tab-layout">
       <div>
         <h3>Как увидит родитель</h3>
-        <ParentReportView data={data} frames={parentFrames} realm="staff" teacherName={lesson.teacher_name} scheduledAt={lesson.scheduled_at} />
+        <ParentReportView data={data} frames={parentFrames} teacherName={lesson.teacher_name} scheduledAt={lesson.scheduled_at} />
       </div>
       <div className="stack">
         <div className="card card-muted">
@@ -87,8 +126,7 @@ export function ParentTab({
                       </div>
                       <div className="xs muted">
                         {n.sent_at ? formatDateTime(n.sent_at) : formatDateTime(n.created_at)}
-                        {n.error ? ` · ${n.error}` : ""}
-                        {n.status === "skipped" && typeof n.payload?.reason === "string" ? ` · ${n.payload.reason}` : ""}
+                        {describeNotification(n)}
                       </div>
                     </li>
                   ))}

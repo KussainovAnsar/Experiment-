@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.config import Settings, get_settings
 from app.db.models import Parent, StaffRole, StaffUser
 from app.db.session import get_session
-from app.services.auth import TokenError, decode_token
+from app.services.auth import TokenError, decode_token, parent_tokens_revoked_after, token_issued_at
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -35,15 +35,29 @@ def _bearer_token(credentials: HTTPAuthorizationCredentials | None) -> str | Non
     return credentials.credentials
 
 
+async def _staff_by_id(session: AsyncSession, staff_id: uuid.UUID) -> StaffUser:
+    user = await session.get(StaffUser, staff_id, options=[selectinload(StaffUser.center)])
+    if user is None or not user.is_active:
+        raise _UNAUTHORIZED
+    return user
+
+
+async def _parent_by_claims(session: AsyncSession, parent_id: uuid.UUID, claims: dict[str, Any]) -> Parent:
+    parent = await session.get(Parent, parent_id)
+    if parent is None:
+        raise _UNAUTHORIZED
+    revoked_at = await parent_tokens_revoked_after(session, parent.id)
+    if revoked_at is not None and token_issued_at(claims) < revoked_at:
+        raise _UNAUTHORIZED  # issued before the staff revocation («Отозвать доступ»)
+    return parent
+
+
 async def _load_staff(session: AsyncSession, token: str) -> StaffUser:
     try:
         claims = decode_token(token, expected_type="staff")
     except TokenError as exc:
         raise _UNAUTHORIZED from exc
-    user = await session.get(StaffUser, uuid.UUID(claims["sub"]), options=[selectinload(StaffUser.center)])
-    if user is None or not user.is_active:
-        raise _UNAUTHORIZED
-    return user
+    return await _staff_by_id(session, uuid.UUID(claims["sub"]))
 
 
 async def _load_parent(session: AsyncSession, token: str) -> Parent:
@@ -51,10 +65,7 @@ async def _load_parent(session: AsyncSession, token: str) -> Parent:
         claims = decode_token(token, expected_type="parent")
     except TokenError as exc:
         raise _UNAUTHORIZED from exc
-    parent = await session.get(Parent, uuid.UUID(claims["sub"]))
-    if parent is None:
-        raise _UNAUTHORIZED
-    return parent
+    return await _parent_by_claims(session, uuid.UUID(claims["sub"]), claims)
 
 
 async def current_staff(
@@ -90,7 +101,7 @@ async def current_parent(
     session: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
 ) -> Parent:
-    """Resolve the parent from a parent JWT (401 otherwise)."""
+    """Resolve the parent from a parent JWT (401 otherwise; also after a staff revocation)."""
     token = _bearer_token(credentials)
     if token is None:
         raise _UNAUTHORIZED
@@ -102,10 +113,14 @@ CurrentParent = Annotated[Parent, Depends(current_parent)]
 
 @dataclass(slots=True)
 class MediaPrincipal:
-    """Either a staff user or a parent; used by media routes that accept a query-string token."""
+    """Either a staff user or a parent; used by media routes.
+
+    ``lesson_id`` is set when the request was authorised by a media token, which is valid for that lesson only.
+    """
 
     staff: StaffUser | None = None
     parent: Parent | None = None
+    lesson_id: uuid.UUID | None = None
 
     @property
     def center_id(self) -> uuid.UUID:
@@ -113,33 +128,44 @@ class MediaPrincipal:
         assert principal is not None
         return principal.center_id
 
+    def allows_lesson(self, lesson_id: uuid.UUID) -> bool:
+        """False when a lesson-scoped media token is used for another lesson."""
+        return self.lesson_id is None or self.lesson_id == lesson_id
+
 
 async def media_principal(
     request: Request,
     session: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-    access_token: Annotated[str | None, Query(description="JWT for <img>/<video> tags that cannot set headers")] = None,
+    access_token: Annotated[
+        str | None, Query(description="Короткоживущий media-токен урока для <img>/<video> (GET …/media-token)")
+    ] = None,
 ) -> MediaPrincipal:
-    """Media-only auth: the JWT may come from the Authorization header OR ``?access_token=``.
+    """Media-only auth.
 
-    Works for both staff and parent tokens; the route decides whether the principal may see the file.
+    ``Authorization: Bearer`` accepts staff and parent session tokens as everywhere else. The ``?access_token=``
+    query string accepts **only** ``typ=media`` tokens (short-lived, scoped to one lesson) — a session token in a
+    URL would leak into proxy logs and browser history. The route still decides whether the principal may see
+    the file.
     """
-    token = _bearer_token(credentials) or access_token
-    if not token:
+    header_token = _bearer_token(credentials)
+    if header_token:
+        try:
+            decode_token(header_token, expected_type="staff")
+        except TokenError:
+            return MediaPrincipal(parent=await _load_parent(session, header_token))
+        return MediaPrincipal(staff=await _load_staff(session, header_token))
+    if not access_token:
         raise _UNAUTHORIZED
     try:
-        claims = decode_token(token, expected_type="staff")
-        typ = "staff"
-    except TokenError:
-        try:
-            claims = decode_token(token, expected_type="parent")
-            typ = "parent"
-        except TokenError as exc:
-            raise _UNAUTHORIZED from exc
-    del claims
-    if typ == "staff":
-        return MediaPrincipal(staff=await _load_staff(session, token))
-    return MediaPrincipal(parent=await _load_parent(session, token))
+        claims = decode_token(access_token, expected_type="media")
+    except TokenError as exc:
+        raise _UNAUTHORIZED from exc
+    lesson_id = uuid.UUID(str(claims["lesson_id"]))
+    subject = uuid.UUID(claims["sub"])
+    if claims["ptyp"] == "staff":
+        return MediaPrincipal(staff=await _staff_by_id(session, subject), lesson_id=lesson_id)
+    return MediaPrincipal(parent=await _parent_by_claims(session, subject, claims), lesson_id=lesson_id)
 
 
 CurrentMediaPrincipal = Annotated[MediaPrincipal, Depends(media_principal)]

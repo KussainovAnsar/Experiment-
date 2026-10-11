@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentStaff, DbSession, is_teacher, not_found
 from app.api.lessons import get_lesson_or_404
-from app.db.models import ActorType, Report, ReportKind
+from app.db.models import ActorType, Notification, Report, ReportKind, StaffUser
 from app.logging import get_logger
 from app.schemas.api import NotificationOut, ReportOut
 from app.services.audit import audit
@@ -20,16 +20,28 @@ log = get_logger(__name__)
 
 
 async def latest_reports(session: AsyncSession, lesson_id: uuid.UUID) -> dict[ReportKind, Report]:
-    """Return the latest version of each report kind for a lesson."""
+    """Return the latest version of each report kind for a lesson (``DISTINCT ON (kind)`` — one row per kind)."""
     rows = (
         await session.execute(
-            select(Report).where(Report.lesson_id == lesson_id).order_by(Report.kind, Report.version.desc())
+            select(Report)
+            .distinct(Report.kind)
+            .where(Report.lesson_id == lesson_id)
+            .order_by(Report.kind, Report.version.desc())
         )
     ).scalars()
-    latest: dict[ReportKind, Report] = {}
-    for report in rows:
-        latest.setdefault(report.kind, report)
-    return latest
+    return {report.kind: report for report in rows}
+
+
+# Invite secrets that only owner / methodist may see (GET /api/parents/{id} is manager-only for the same reason).
+_MANAGER_ONLY_PAYLOAD_KEYS = ("deep_link", "magic_url", "telegram_deep_link")
+
+
+def notification_out(notification: Notification, user: StaffUser) -> NotificationOut:
+    """``NotificationOut`` for ``user``: teachers never receive the Telegram deep link / portal URL."""
+    out = NotificationOut.model_validate(notification)
+    if is_teacher(user):
+        out.payload = {k: v for k, v in out.payload.items() if k not in _MANAGER_ONLY_PAYLOAD_KEYS}
+    return out
 
 
 def _visible_kinds(user_is_teacher: bool) -> list[ReportKind]:
@@ -89,4 +101,4 @@ async def send_parent_report(lesson_id: uuid.UUID, user: CurrentStaff, session: 
     )
     await session.commit()
     log.info("parent_report_sent", lesson_id=str(lesson.id), count=len(notifications))
-    return [NotificationOut.model_validate(n) for n in notifications]
+    return [notification_out(n, user) for n in notifications]

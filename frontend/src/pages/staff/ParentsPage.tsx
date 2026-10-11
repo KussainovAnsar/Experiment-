@@ -96,6 +96,24 @@ export function ParentsPage() {
     }
   };
 
+  const revokeAccess = async (p: Parent) => {
+    const ok = window.confirm(
+      `Отозвать доступ родителя «${p.full_name}»? Все ссылки в кабинет и вход на телефоне перестанут работать, ` +
+        "Telegram будет отвязан, код приглашения заменён. Затем отправьте новое приглашение.",
+    );
+    if (!ok) return;
+    setPending(p.id);
+    try {
+      await parentsApi.revokeAccess(p.id);
+      await refresh();
+      toast.show("Доступ отозван. Отправьте родителю новое приглашение.", "success");
+    } catch (err) {
+      toast.show(errorMessage(err), "error");
+    } finally {
+      setPending(null);
+    }
+  };
+
   const doLink = async (e: FormEvent) => {
     e.preventDefault();
     if (!linkFor || !linkStudent.student_id) return;
@@ -185,6 +203,15 @@ export function ParentsPage() {
                         </button>
                         <button type="button" className="btn btn-sm" disabled={pending === p.id} onClick={() => sendInvite(p)}>
                           Отправить приглашение
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          disabled={pending === p.id}
+                          title="Потерян телефон, ссылка переслана или привязан чужой Telegram: отключить всё и выдать новый код"
+                          onClick={() => revokeAccess(p)}
+                        >
+                          Отозвать доступ
                         </button>
                       </div>
                     </td>

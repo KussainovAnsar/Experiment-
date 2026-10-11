@@ -38,7 +38,7 @@ from app.schemas.api import (
     TeacherUpdate,
 )
 from app.services.audit import audit
-from app.services.auth import create_magic_link, generate_invite_code
+from app.services.auth import create_magic_link, issue_unique_invite_code, revoke_parent_access
 
 router = APIRouter(prefix="/api", tags=["people"])
 log = get_logger(__name__)
@@ -290,12 +290,12 @@ async def list_parents(
 
 
 async def _unique_invite_code(session: AsyncSession) -> str:
-    for _ in range(10):
-        code = generate_invite_code()
-        taken = (await session.execute(select(Parent.id).where(Parent.invite_code == code))).first()
-        if taken is None:
-            return code
-    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Не удалось создать код приглашения")
+    try:
+        return await issue_unique_invite_code(session)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Не удалось создать код приглашения"
+        ) from exc
 
 
 @router.post("/parents", response_model=ParentOut, status_code=status.HTTP_201_CREATED)
@@ -387,6 +387,29 @@ async def unlink_student(
     return parent_to_dto(await get_parent_or_404(session, user, parent.id))
 
 
+@router.post("/parents/{parent_id}/revoke-access", response_model=ParentOut)
+async def revoke_access(parent_id: uuid.UUID, user: ManagerStaff, session: DbSession) -> ParentOut:
+    """«Отозвать доступ»: expire magic links, invalidate issued parent tokens, unbind Telegram, rotate the code.
+
+    Use when a phone is lost, a link was forwarded or the wrong Telegram account was bound. The parent is
+    re-invited afterwards with the new invite code / a fresh magic link.
+    """
+    parent = await get_parent_or_404(session, user, parent_id)
+    await revoke_parent_access(session, parent)
+    await audit(
+        session,
+        center_id=user.center_id,
+        actor_type=ActorType.staff,
+        actor_id=user.id,
+        action="parent_access_revoked",
+        entity="parent",
+        entity_id=parent.id,
+    )
+    await session.commit()
+    log.info("parent_access_revoked", parent_id=str(parent.id), staff_id=str(user.id))
+    return parent_to_dto(await get_parent_or_404(session, user, parent.id))
+
+
 @router.post("/parents/{parent_id}/magic-link", response_model=MagicLinkOut)
 async def issue_magic_link(parent_id: uuid.UUID, user: ManagerStaff, session: DbSession) -> MagicLinkOut:
     """Create a fresh portal magic link for manual delivery."""
@@ -428,4 +451,8 @@ async def send_invite(parent_id: uuid.UUID, user: ManagerStaff, session: DbSessi
         meta={"status": notification.status.value, "channel": notification.channel.value},
     )
     await session.commit()
-    return NotificationOut.model_validate(notification)
+    out = NotificationOut.model_validate(notification)
+    portal_url = getattr(notification, "portal_url", None)
+    if portal_url:  # returned to the manager for manual forwarding, never persisted (see notifications._deliver)
+        out.payload = {**out.payload, "magic_url": portal_url}
+    return out

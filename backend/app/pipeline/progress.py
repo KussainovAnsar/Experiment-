@@ -5,14 +5,20 @@ Rules (docs/CONTRACT.md §4 / §5 and module B2 spec):
 * every observed skill gets one *summary* evidence entry per lesson plus the analysis' evidence items and
   the lesson's errors for that skill, so ``times_seen`` / ``times_struggled`` can be **recomputed from
   evidence** — reprocessing the same lesson first drops its previous entries and therefore never double counts;
+  a re-analysis that no longer mentions a skill also *un-counts* it (the lesson's entries are removed from that
+  skill; a skill left without evidence is deleted);
 * ``times_struggled`` counts lessons where the status was ``struggling`` or an error was recorded;
 * the new status is the analysis status, but a skill becomes ``mastered`` only when it was seen in ≥ 2 lessons
   and neither of the latest two lessons had struggling — otherwise it is capped at ``developing``;
-* evidence keeps the last :data:`MAX_EVIDENCE` items (per-lesson summary entries are dropped last).
+* evidence keeps the last :data:`MAX_EVIDENCE` *detail* items; per-lesson summary entries are never dropped, so
+  the counts stay exact after more than :data:`MAX_EVIDENCE` lessons;
+* ``skill_key`` is normalised to a lower-case slug of at most :data:`SKILL_KEY_MAX_LEN` characters (the
+  ``skill_states.skill_key`` column width) — an over-long slug from the LLM can never fail the lesson.
 """
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -28,7 +34,18 @@ from app.schemas.analysis import RUSSIAN_SKILL_KEYS, LessonAnalysis
 log = get_logger("app.pipeline.progress")
 
 MAX_EVIDENCE = 20
+SKILL_KEY_MAX_LEN = 80  # SkillState.skill_key is String(80)
 _STATUS_ORDER = {SkillStatus.struggling: 0, SkillStatus.developing: 1, SkillStatus.mastered: 2}
+_NON_SLUG_RE = re.compile(r"[^\w]+", re.UNICODE)
+_UNDERSCORES_RE = re.compile(r"_+")
+_STATUS_RU = {"struggling": "трудности", "developing": "в развитии", "mastered": "освоено"}
+
+
+def normalize_skill_key(key: str | None) -> str:
+    """Lower-case word-character slug of at most :data:`SKILL_KEY_MAX_LEN` characters (``unknown_skill`` when empty)."""
+    slug = _UNDERSCORES_RE.sub("_", _NON_SLUG_RE.sub("_", str(key or "").strip().lower())).strip("_")
+    slug = slug[:SKILL_KEY_MAX_LEN].rstrip("_")
+    return slug or "unknown_skill"
 
 
 @dataclass(slots=True)
@@ -68,7 +85,8 @@ def collect_observations(a: LessonAnalysis, lesson: Lesson) -> dict[str, SkillOb
     """Group the analysis' skills and errors by ``skill_key`` into observations with evidence entries."""
     obs: dict[str, SkillObservation] = {}
     for s in a.skills:
-        o = obs.setdefault(s.skill_key, SkillObservation(s.skill_key, s.skill_name, s.status))
+        key = normalize_skill_key(s.skill_key)
+        o = obs.setdefault(key, SkillObservation(key, s.skill_name, s.status))
         o.status = s.status
         o.skill_name = s.skill_name or o.skill_name
         for ev in s.evidence:
@@ -83,16 +101,18 @@ def collect_observations(a: LessonAnalysis, lesson: Lesson) -> dict[str, SkillOb
                 )
             )
     for e in a.errors:
-        o = obs.get(e.skill_key)
+        key = normalize_skill_key(e.skill_key)
+        o = obs.get(key)
         if o is None:
-            name = e.skill_name or RUSSIAN_SKILL_KEYS.get(e.skill_key, e.skill_key)
-            o = obs[e.skill_key] = SkillObservation(e.skill_key, name, "struggling")
+            name = e.skill_name or RUSSIAN_SKILL_KEYS.get(key, key)
+            o = obs[key] = SkillObservation(key, name, "struggling")
+        note = f"Ошибка: {e.description}" + (" — исправлена в ходе урока" if e.corrected else "")
         o.entries.append(
             _entry(
                 lesson,
                 kind="error",
                 status="struggling",
-                note=f"Ошибка: {e.description}",
+                note=note,
                 timestamp_sec=e.timestamp,
                 frame_ids=e.frame_ids,
             )
@@ -100,7 +120,7 @@ def collect_observations(a: LessonAnalysis, lesson: Lesson) -> dict[str, SkillOb
     for o in obs.values():
         o.skill_name = o.skill_name or RUSSIAN_SKILL_KEYS.get(o.skill_key, o.skill_key)
         first_ts = min((en["timestamp_sec"] for en in o.entries if en["timestamp_sec"] is not None), default=None)
-        status_ru = {"struggling": "трудности", "developing": "в развитии", "mastered": "освоено"}[o.status]
+        status_ru = _STATUS_RU[o.status]
         summary = _entry(
             lesson, kind="summary", status=o.status, note=f"Итог урока: статус «{status_ru}»", timestamp_sec=first_ts
         )
@@ -134,7 +154,11 @@ def _struggled_lessons(evidence: list[dict]) -> set[str]:
 
 
 def trim_evidence(evidence: list[dict], limit: int = MAX_EVIDENCE) -> list[dict]:
-    """Keep at most ``limit`` entries: oldest non-summary entries go first, then oldest summaries."""
+    """Drop the oldest *detail* entries until at most ``limit`` remain; per-lesson summaries are never dropped.
+
+    ``times_seen`` / ``first_seen_lesson_id`` are derived from the summaries, so the list may exceed ``limit``
+    by the number of lessons beyond it (one small summary entry per lesson) rather than under-count.
+    """
     items = list(evidence)
     while len(items) > limit:
         for i, e in enumerate(items):
@@ -142,8 +166,18 @@ def trim_evidence(evidence: list[dict], limit: int = MAX_EVIDENCE) -> list[dict]
                 del items[i]
                 break
         else:
-            del items[0]
+            break
     return items
+
+
+def _latest_summary_status(evidence: list[dict]) -> str | None:
+    """Status of the chronologically last per-lesson summary entry, if any."""
+    order = {lid: pos for pos, lid in enumerate(_lesson_order(evidence))}
+    summaries = [e for e in evidence if e.get("kind") == "summary" and e.get("status") in _STATUS_RU]
+    if not summaries:
+        return None
+    last = max(summaries, key=lambda e: order.get(str(e.get("lesson_id")), -1))
+    return str(last["status"])
 
 
 def resolve_status(requested: str, lessons: list[str], struggled: set[str]) -> SkillStatus:
@@ -159,23 +193,40 @@ def resolve_status(requested: str, lessons: list[str], struggled: set[str]) -> S
 # ---------------------------------------------------------------- public API
 
 
+def _apply_evidence(state: SkillState, entries: list[dict], *, requested_status: str, fallback_lesson: Lesson) -> None:
+    """Recompute status, counts and first/last lesson of ``state`` from ``entries`` (then trimmed)."""
+    evidence = trim_evidence(entries)
+    lessons = _lesson_order(evidence)
+    struggled = _struggled_lessons(evidence)
+    state.status = resolve_status(requested_status, lessons, struggled)
+    state.evidence = evidence  # new list object → JSONB change is detected
+    state.times_seen = len(lessons)
+    state.times_struggled = len(struggled)
+    if lessons:
+        state.first_seen_lesson_id = _as_uuid(lessons[0]) or state.first_seen_lesson_id or fallback_lesson.id
+        state.last_seen_lesson_id = _as_uuid(lessons[-1]) or fallback_lesson.id
+    else:  # pragma: no cover - callers never pass an empty list
+        state.first_seen_lesson_id = state.first_seen_lesson_id or fallback_lesson.id
+        state.last_seen_lesson_id = fallback_lesson.id
+
+
+def _without_lesson(evidence: list | None, lesson_id: str) -> list[dict]:
+    return [e for e in (evidence or []) if isinstance(e, dict) and str(e.get("lesson_id")) != lesson_id]
+
+
 async def update_progress(session: AsyncSession, lesson: Lesson, analysis: Analysis) -> list[SkillState]:
-    """Merge ``analysis`` into the student's ``skill_states``; returns the touched rows (flushed, not committed)."""
+    """Merge ``analysis`` into the student's ``skill_states``; returns the touched rows (flushed, not committed).
+
+    Idempotent per lesson in both directions: the lesson's previous entries are replaced for skills the new
+    analysis mentions and removed from skills it no longer mentions (reprocess with a different verdict).
+    """
     a = LessonAnalysis.model_validate(analysis.data)
     observations = collect_observations(a, lesson)
-    if not observations:
-        log.info("progress_no_skills", lesson_id=str(lesson.id))
-        return []
-    rows = (
-        await session.execute(
-            select(SkillState).where(
-                SkillState.student_id == lesson.student_id, SkillState.skill_key.in_(list(observations))
-            )
-        )
-    ).scalars()
+    rows = (await session.execute(select(SkillState).where(SkillState.student_id == lesson.student_id))).scalars()
     states: dict[str, SkillState] = {s.skill_key: s for s in rows}
     lesson_id = str(lesson.id)
     touched: list[SkillState] = []
+    removed: list[str] = []
     for key, obs in observations.items():
         state = states.get(key)
         if state is None:
@@ -189,28 +240,33 @@ async def update_progress(session: AsyncSession, lesson: Lesson, analysis: Analy
                 times_struggled=0,
             )
             session.add(state)
-        kept = [e for e in (state.evidence or []) if isinstance(e, dict) and str(e.get("lesson_id")) != lesson_id]
-        evidence = trim_evidence([*kept, *obs.entries])
-        lessons = _lesson_order(evidence)
-        struggled = _struggled_lessons(evidence)
+        kept = _without_lesson(state.evidence, lesson_id)
         state.skill_name = (obs.skill_name or state.skill_name)[:200]
-        state.status = resolve_status(obs.status, lessons, struggled)
-        state.evidence = evidence  # new list object → JSONB change is detected
-        state.times_seen = len(lessons)
-        state.times_struggled = len(struggled)
-        if lessons:
-            state.first_seen_lesson_id = _as_uuid(lessons[0]) or state.first_seen_lesson_id or lesson.id
-            state.last_seen_lesson_id = _as_uuid(lessons[-1]) or lesson.id
-        else:  # pragma: no cover - observations always add at least the summary entry
-            state.first_seen_lesson_id = state.first_seen_lesson_id or lesson.id
-            state.last_seen_lesson_id = lesson.id
+        _apply_evidence(state, [*kept, *obs.entries], requested_status=obs.status, fallback_lesson=lesson)
         touched.append(state)
+    for key, state in states.items():
+        if key in observations:
+            continue
+        kept = _without_lesson(state.evidence, lesson_id)
+        if len(kept) == len(state.evidence or []):
+            continue  # this lesson never contributed to the skill
+        if not kept:
+            await session.delete(state)
+            removed.append(key)
+            continue
+        requested = _latest_summary_status(kept) or state.status.value
+        _apply_evidence(state, kept, requested_status=requested, fallback_lesson=lesson)
+        touched.append(state)
+    if not observations and not touched and not removed:
+        log.info("progress_no_skills", lesson_id=lesson_id)
+        return []
     await session.flush()
     log.info(
         "progress_updated",
         lesson_id=lesson_id,
         student_id=str(lesson.student_id),
         skills={s.skill_key: s.status.value for s in touched},
+        removed=removed,
     )
     return touched
 

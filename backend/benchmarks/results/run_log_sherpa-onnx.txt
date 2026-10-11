@@ -1,0 +1,44 @@
+14:23:57 INFO [tiny/ru clean forced:ru] n=32 WER=0.459 CER=0.179 RTF=0.089 (12s) langs={'ru': 32}
+14:24:09 INFO [tiny/ru clean auto] n=32 WER=0.459 CER=0.179 RTF=0.092 (12s) langs={'ru': 32}
+14:24:21 INFO [tiny/ru degraded forced:ru] n=32 WER=0.492 CER=0.188 RTF=0.083 (11s) langs={'ru': 32}
+14:24:28 INFO [tiny/kk clean forced:kk] n=30 WER=0.971 CER=0.685 RTF=0.112 (7s) langs={'kk': 30}
+14:24:36 INFO [tiny/kk clean auto] n=30 WER=1.073 CER=0.917 RTF=0.110 (7s) langs={'tr': 13, 'ja': 4, 'en': 2, 'ru': 2, 'lt': 2, 'zh': 1, 'de': 1, 'ro': 1, 'hr': 1, 'ko': 1, 'tl': 1, 'az': 1}
+14:24:45 INFO [tiny/mixed clean forced:ru] n=30 WER=0.746 CER=0.393 RTF=0.083 (9s) langs={'ru': 30}
+14:24:55 INFO [tiny/mixed clean forced:kk] n=30 WER=0.901 CER=0.473 RTF=0.092 (9s) langs={'kk': 30}
+14:25:05 INFO [tiny/mixed clean auto] n=30 WER=0.757 CER=0.448 RTF=0.093 (10s) langs={'ru': 26, 'da': 1, 'tr': 1, 'de': 1, 'sk': 1}
+14:25:14 INFO [tiny/mixed degraded forced:ru] n=30 WER=0.784 CER=0.424 RTF=0.089 (9s) langs={'ru': 30}
+14:25:24 INFO [tiny/mixed degraded auto] n=30 WER=0.862 CER=0.472 RTF=0.086 (9s) langs={'ru': 27, 'tr': 2, 'ja': 1}
+14:25:24 INFO model tiny finished in 1.7 min
+14:25:43 INFO [base/ru clean forced:ru] n=32 WER=0.358 CER=0.137 RTF=0.134 (18s) langs={'ru': 32}
+14:26:02 INFO [base/ru clean auto] n=32 WER=0.378 CER=0.154 RTF=0.142 (19s) langs={'ru': 31, 'pl': 1}
+14:26:22 INFO [base/ru degraded forced:ru] n=32 WER=0.326 CER=0.113 RTF=0.138 (19s) langs={'ru': 32}
+14:26:34 INFO [base/kk clean forced:kk] n=30 WER=0.971 CER=0.636 RTF=0.179 (11s) langs={'kk': 30}
+14:26:46 INFO [base/kk clean auto] n=30 WER=1.088 CER=0.895 RTF=0.193 (12s) langs={'tr': 12, 'kk': 4, 'en': 2, 'mn': 2, 'ko': 1, 'pt': 1, 'bo': 1, 'de': 1, 'ru': 1, 'lt': 1, 'ka': 1, 'ar': 1, 'id': 1, 'hy': 1}
+14:27:00 INFO [base/mixed clean forced:ru] n=30 WER=0.768 CER=0.437 RTF=0.124 (13s) langs={'ru': 30}
+14:27:16 INFO [base/mixed clean forced:kk] n=30 WER=0.972 CER=0.565 RTF=0.154 (16s) langs={'kk': 30}
+14:27:30 INFO [base/mixed clean auto] n=30 WER=0.768 CER=0.515 RTF=0.127 (13s) langs={'ru': 23, 'tr': 2, 'kk': 1, 'lt': 1, 'la': 1, 'uk': 1, 'ja': 1}
+14:27:44 INFO [base/mixed degraded forced:ru] n=30 WER=0.757 CER=0.405 RTF=0.124 (13s) langs={'ru': 30}
+14:27:58 INFO [base/mixed degraded auto] n=30 WER=0.801 CER=0.468 RTF=0.131 (14s) langs={'ru': 24, 'tr': 2, 'kk': 1, 'lt': 1, 'uk': 1, 'ja': 1}
+14:27:58 INFO model base finished in 2.6 min
+14:28:55 INFO [small/ru clean forced:ru] n=32 WER=0.231 CER=0.079 RTF=0.410 (55s) langs={'ru': 32}
+14:29:54 INFO [small/ru clean auto] n=32 WER=0.231 CER=0.079 RTF=0.426 (57s) langs={'ru': 32}
+14:30:51 INFO [small/ru degraded forced:ru] n=32 WER=0.251 CER=0.087 RTF=0.409 (55s) langs={'ru': 32}
+14:31:26 INFO [small/kk clean forced:kk] n=30 WER=0.927 CER=0.587 RTF=0.551 (33s) langs={'kk': 30}
+14:32:01 INFO [small/kk clean auto] n=30 WER=1.080 CER=0.763 RTF=0.547 (33s) langs={'kk': 9, 'tr': 7, 'ru': 5, 'hy': 2, 'az': 2, 'ar': 1, 'ms': 1, 'fi': 1, 'en': 1, 'ps': 1}
+14:32:38 INFO [small/mixed clean forced:ru] n=30 WER=0.713 CER=0.392 RTF=0.348 (36s) langs={'ru': 30}
+14:33:25 INFO [small/mixed clean forced:kk] n=30 WER=0.923 CER=0.636 RTF=0.434 (45s) langs={'kk': 30}
+14:34:05 INFO [small/mixed clean auto] n=30 WER=0.740 CER=0.450 RTF=0.372 (38s) langs={'ru': 23, 'kk': 3, 'lt': 2, 'tr': 1, 'uk': 1}
+14:34:41 INFO [small/mixed degraded forced:ru] n=30 WER=0.729 CER=0.415 RTF=0.329 (34s) langs={'ru': 30}
+14:35:19 INFO [small/mixed degraded auto] n=30 WER=0.740 CER=0.480 RTF=0.355 (37s) langs={'ru': 25, 'lt': 3, 'kk': 1, 'tr': 1}
+14:35:19 INFO model small finished in 7.4 min
+14:39:01 INFO [medium/ru clean forced:ru] n=32 WER=0.189 CER=0.076 RTF=1.599 (215s) langs={'ru': 32}
+14:42:58 INFO [medium/ru clean auto] n=32 WER=0.189 CER=0.076 RTF=1.718 (231s) langs={'ru': 32}
+14:46:55 INFO [medium/ru degraded forced:ru] n=32 WER=0.202 CER=0.074 RTF=1.721 (232s) langs={'ru': 32}
+14:49:23 INFO [medium/kk clean forced:kk] n=30 WER=0.861 CER=0.563 RTF=2.355 (142s) langs={'kk': 30}
+14:51:38 INFO [medium/kk clean auto] n=30 WER=0.898 CER=0.661 RTF=2.159 (130s) langs={'kk': 21, 'az': 7, 'tr': 1, 'fi': 1}
+14:53:33 INFO [medium/mixed clean forced:ru] n=30 WER=0.685 CER=0.479 RTF=1.062 (109s) langs={'ru': 30}
+14:56:30 INFO [medium/mixed clean forced:kk] n=30 WER=0.901 CER=0.593 RTF=1.670 (172s) langs={'kk': 30}
+14:58:52 INFO [medium/mixed clean auto] n=30 WER=0.680 CER=0.445 RTF=1.328 (137s) langs={'ru': 18, 'kk': 12}
+15:01:01 INFO [medium/mixed degraded forced:ru] n=30 WER=0.702 CER=0.468 RTF=1.200 (123s) langs={'ru': 30}
+15:03:46 INFO [medium/mixed degraded auto] n=30 WER=0.668 CER=0.442 RTF=1.554 (160s) langs={'ru': 19, 'kk': 11}
+15:03:46 INFO model medium finished in 28.4 min

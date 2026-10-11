@@ -205,6 +205,9 @@ class MagicLinkOut(BaseModel):
 
 
 class NotificationOut(_Out):
+    """A delivery attempt. ``payload`` never contains invite secrets for the ``teacher`` role (``deep_link``,
+    ``magic_url`` are stripped); the invite ``magic_url`` is returned to managers but not persisted."""
+
     id: uuid.UUID
     parent_id: uuid.UUID | None
     lesson_id: uuid.UUID | None
@@ -274,7 +277,18 @@ class TranscriptOut(BaseModel):
     duration_sec: float | None
 
 
+class MediaTokenOut(BaseModel):
+    """Short-lived token for ``?access_token=`` on ``/api/media/*`` URLs of one lesson."""
+
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    lesson_id: uuid.UUID
+    expires_at: datetime
+
+
 class AnalysisOut(BaseModel):
+    """``LessonAnalysis`` JSON; for the ``teacher`` role ``data`` has ``manager_indicators`` set to ``null``."""
+
     provider: str
     model: str | None
     prompt_version: str
@@ -304,7 +318,7 @@ class DashboardOut(BaseModel):
     lessons_processing: int
     lessons_failed: int
     share_objectives_checked: float | None = Field(description="Share of done lessons with objectives_checked=true")
-    needs_review_count: int
+    needs_review_count: int | None = Field(description="null for the teacher role (manager-only indicator)")
     recent_lessons: list[LessonOut]
     needs_review_lessons: list[LessonOut]
 
@@ -313,7 +327,8 @@ class DashboardOut(BaseModel):
 
 
 class ParentExchangeRequest(BaseModel):
-    token: str = Field(min_length=8, max_length=128)
+    # urlsafe base64 alphabet only: anything else is rejected with 422 before it reaches the hash.
+    token: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class ParentMeOut(_Out):
@@ -365,9 +380,12 @@ class ParentLessonCard(BaseModel):
 
 
 class ParentFrameOut(BaseModel):
+    """A keyframe the parent report points at (an error, a success or a visual issue), with a plain caption."""
+
     index: int
     timestamp_sec: float
     url: str
+    caption: str | None = None
 
 
 class ParentLessonReportOut(BaseModel):
@@ -376,6 +394,7 @@ class ParentLessonReportOut(BaseModel):
     teacher_name: str
     data: dict[str, Any]
     frames: list[ParentFrameOut]
+    media_token: str | None = Field(default=None, description="Short-lived ?access_token= for the frame URLs")
 
 
 # ---------------------------------------------------------------- misc

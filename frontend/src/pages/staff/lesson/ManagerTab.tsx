@@ -6,13 +6,28 @@ import type { Report } from "@/types/api";
 import { EVENT_KIND_LABELS, SPEAKER_LABELS, type LessonAnalysis } from "@/types/analysis";
 import { ReportDataView, ReportMarkdown } from "./ReportData";
 
-function Indicator({ ok, label, detail, invert }: { ok: boolean; label: string; detail?: string | null; invert?: boolean }) {
+function Indicator({
+  ok,
+  label,
+  detail,
+  invert,
+  neutral,
+}: {
+  ok: boolean;
+  label: string;
+  detail?: string | null;
+  invert?: boolean;
+  /** Informational fact, not a pass/fail judgement: shown with an «i», never a red «!». */
+  neutral?: boolean;
+}) {
   // `invert`: true means "ok" is the undesirable state (e.g. needs review).
   const good = invert ? !ok : ok;
+  const cls = neutral ? "indicator-neutral" : good ? "indicator-ok" : "indicator-bad";
+  const icon = neutral ? "i" : good ? "✓" : "!";
   return (
-    <div className={`indicator ${good ? "indicator-ok" : "indicator-bad"}`}>
+    <div className={`indicator ${cls}`}>
       <span className="indicator-icon" aria-hidden="true">
-        {good ? "✓" : "!"}
+        {icon}
       </span>
       <div>
         <div style={{ fontWeight: 600 }}>{label}</div>
@@ -47,6 +62,9 @@ export function ManagerTab({
   }
 
   const m = analysis.manager_indicators;
+  if (!m) {
+    return <EmptyState title="Показатели для методиста недоступны" text="Этот раздел виден владельцу и методисту центра." />;
+  }
   const teacherShare = m.teacher_talk_share;
   const studentShare = m.student_talk_share;
   const hasShares = teacherShare !== null || studentShare !== null;
@@ -60,9 +78,10 @@ export function ManagerTab({
         <div className="grid grid-3">
           <Indicator ok={m.objectives_checked} label="Цели проверены" detail={m.objectives_checked ? "Преподаватель проверил достижение целей" : "Проверка целей не наблюдалась"} />
           <Indicator
-            ok={!m.difficulties_detected}
+            ok={m.difficulties_detected}
+            neutral
             label="Трудности выявлены"
-            detail={m.difficulties_detected ? "Зафиксированы ошибки или затруднения ученика" : "Явных затруднений не зафиксировано"}
+            detail={m.difficulties_detected ? "Ученик ошибался — см. ключевые эпизоды" : "Явных затруднений не зафиксировано"}
           />
           <Indicator
             ok={m.needs_methodist_review}
@@ -71,6 +90,10 @@ export function ManagerTab({
             detail={m.needs_methodist_review ? m.review_reason ?? "Рекомендуется посмотреть запись" : "Разбор не требуется"}
           />
         </div>
+        <p className="xs muted mt-2 mb-0">
+          ✓ — цели проверены наблюдаемым способом; «i» — факт об уроке (ошибки ученика — нормальная часть обучения, не оценка
+          преподавателя); «!» — стоит посмотреть запись.
+        </p>
       </section>
 
       <section className="grid grid-2">

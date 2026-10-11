@@ -176,7 +176,9 @@ async def test_send_parent_invite_telegram_unbound_is_skipped_with_links(
     assert n.payload["kind"] == "invite"
     assert n.payload["reason"] == "telegram_not_linked"
     assert n.payload["deep_link"] == f"https://t.me/{BOT_USERNAME}?start={seeded.code_tg_unbound}"
-    assert n.payload["magic_url"].startswith("http://testserver/p/")
+    # the live portal URL is handed back to the caller but never persisted in the row
+    assert n.portal_url.startswith("http://testserver/p/")  # type: ignore[attr-defined]
+    assert "magic_url" not in n.payload
     assert n.payload["has_portal_link"] is True
     assert len(await _magic_links(session, seeded.parent_tg_unbound_id)) == 1
     assert mock.sent == []
@@ -208,7 +210,8 @@ async def test_send_parent_invite_channel_none_and_unknown_parent(
     await session.commit()
     assert n.status is models.NotificationStatus.skipped
     assert n.payload["reason"] == "channel_none"
-    assert n.payload["magic_url"].startswith("http://testserver/p/")
+    assert n.portal_url.startswith("http://testserver/p/")  # type: ignore[attr-defined]
+    assert "magic_url" not in n.payload
     assert n.payload["deep_link"]
     with pytest.raises(ValueError):
         await svc.send_parent_invite(session, uuid.uuid4())

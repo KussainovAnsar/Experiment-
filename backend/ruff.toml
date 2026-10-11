@@ -8,4 +8,6 @@ ignore = ["B008", "RUF012", "RUF001", "RUF002", "RUF003", "SIM108", "RUF100"]
 
 [lint.per-file-ignores]
 "app/migrations/versions/*" = ["E501"]
-"app/db/models.py" = ["E501"]
+# Shared contract files (models/schema) are frozen by docs/CONTRACT.md; keep their style as-is.
+"app/db/models.py" = ["E501", "UP042"]
+"app/schemas/analysis.py" = ["E501"]

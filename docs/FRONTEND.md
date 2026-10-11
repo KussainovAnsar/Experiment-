@@ -112,14 +112,18 @@ Role awareness: `teacher` role sees no Преподаватели / Родите
 
 ### Media and the `access_token` query parameter
 
-`<img>` and `<video>` tags cannot send an `Authorization` header, so every media URL is built with
-`withAccessToken(url, realm)` (`src/auth/storage.ts`), which appends `?access_token=<jwt>`:
+`<img>` and `<video>` tags cannot send an `Authorization` header. Media URLs therefore carry a **short-lived,
+lesson-scoped media token** (`typ=media`, ~10 minutes, `MEDIA_TOKEN_TTL_MINUTES`) — never the staff/parent session
+JWT, which would end up in reverse-proxy logs and browser history:
 
-* keyframes: `/api/media/frames/{frame_id}?access_token=…` (staff or a parent linked to the student),
-* source recording: `/api/media/lessons/{lesson_id}/source?access_token=…` (staff only; supports Range requests
-  for seeking).
+* staff: `GET /api/lessons/{id}/media-token` (`useLessonMediaToken`, refreshed every 8 minutes while the lesson
+  page is open) → `MediaTokenContext` on the lesson page; `useMediaUrl()` / `withMediaToken(url, token)`
+  (`src/auth/media.tsx`, `src/auth/storage.ts`) append `?access_token=…` to frame and source URLs;
+* parent: `GET /api/parent/students/{sid}/lessons/{lid}` returns `media_token` next to the (already filtered)
+  `frames`; the parent lesson page provides it through the same context.
 
-The backend accepts the token from either the header or this query parameter on `/api/media/*` only.
+The backend accepts a media token **only** from the query string of `/api/media/*` and only for the lesson it was
+issued for; session tokens are accepted only in the header.
 Never use this pattern for other endpoints.
 
 ## Telegram preview

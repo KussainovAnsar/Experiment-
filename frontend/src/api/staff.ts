@@ -10,6 +10,7 @@ import type {
   LinkStudentRequest,
   LoginRequest,
   MagicLinkOut,
+  MediaToken,
   Notification,
   Page,
   Parent,
@@ -87,7 +88,9 @@ export const lessonsApi = {
     form.append("language_hints", fields.language_hints.join(","));
     return uploadWithProgress<Lesson>("/api/lessons", form, onProgress, { signal });
   },
-  /** Media URL of the source recording (append access_token via withAccessToken). */
+  /** Short-lived, lesson-scoped token for `?access_token=` on media URLs (frames, source). */
+  mediaToken: (id: string) => http.get<MediaToken>(`/api/lessons/${id}/media-token`),
+  /** Media URL of the source recording (append the media token via withMediaToken / useMediaUrl). */
   sourceUrl: (id: string) => `/api/media/lessons/${id}/source`,
 };
 
@@ -116,4 +119,6 @@ export const parentsApi = {
     http.post<Parent>(`/api/parents/${id}/link-student`, body),
   magicLink: (id: string) => http.post<MagicLinkOut>(`/api/parents/${id}/magic-link`),
   sendInvite: (id: string) => http.post<Notification>(`/api/parents/${id}/send-invite`),
+  /** «Отозвать доступ»: expire links/tokens, unbind Telegram, rotate the invite code. */
+  revokeAccess: (id: string) => http.post<Parent>(`/api/parents/${id}/revoke-access`),
 };

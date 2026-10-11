@@ -1,6 +1,6 @@
 /** Keyframe grid; clicking a frame seeks the video. */
 import type { UseQueryResult } from "@tanstack/react-query";
-import { frameSrc } from "@/components/FrameThumb";
+import { useMediaUrl } from "@/auth/media";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { useSeek } from "@/hooks/useSeek";
 import { formatTimecode } from "@/lib/format";
@@ -10,6 +10,7 @@ const REASON_LABEL: Record<string, string> = { scene: "смена сцены", i
 
 export function FramesTab({ query, activeIndex }: { query: UseQueryResult<Frame[]>; activeIndex: number | null }) {
   const seek = useSeek();
+  const mediaUrl = useMediaUrl();
   if (query.isLoading) return <Skeleton lines={6} />;
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />;
   const frames = query.data ?? [];
@@ -20,7 +21,7 @@ export function FramesTab({ query, activeIndex }: { query: UseQueryResult<Frame[
     <div className="frames-grid">
       {frames.map((f) => (
         <button key={f.id} type="button" className={`frame-card${f.index === activeIndex ? " active" : ""}`} onClick={() => seek(f.timestamp_sec)} title="Перейти к моменту">
-          <img src={frameSrc(f, "staff")} alt={`Кадр ${f.index} на ${formatTimecode(f.timestamp_sec)}`} loading="lazy" />
+          <img src={mediaUrl(f.url)} alt={`Кадр ${f.index} на ${formatTimecode(f.timestamp_sec)}`} loading="lazy" />
           <div className="meta">
             <span>#{f.index} · {formatTimecode(f.timestamp_sec)}</span>
             <span>{REASON_LABEL[f.reason] ?? f.reason}</span>
