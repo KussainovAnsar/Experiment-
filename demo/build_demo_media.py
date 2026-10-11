@@ -49,6 +49,7 @@ MAX_BYTES = 4 * 1024 * 1024
 # stays below the 0.30 threshold while the final jump (≈ (1 - TRANSITION_DIM) × slide luma) exceeds it. The
 # pipeline therefore captures exactly one scene frame per slide — the real slide, at full brightness — even
 # between two white slides whose direct difference would be far below the threshold.
+MIN_SLIDE_SEC = 5.0
 TRANSITION_STEPS = 4
 TRANSITION_DIM = 0.65
 TRANSITION_SEC = TRANSITION_STEPS / FPS
@@ -82,8 +83,9 @@ def frame_durations(frames: list[dict], *, total_sec: float | None, lesson_end: 
     """Seconds each frame stays on screen.
 
     ``total_sec=None`` → real durations (next timestamp − this timestamp; the last frame runs to
-    ``lesson_end``). Otherwise the same proportions are scaled so the sum equals ``total_sec``, with a floor of
-    1.5 s per frame so scene detection and interval sampling see every slide.
+    ``lesson_end``). Otherwise every slide gets a floor of :data:`MIN_SLIDE_SEC` and the rest of ``total_sec``
+    is shared in proportion to the real durations — so even a slide shown for 40 s in a 35-minute lesson stays
+    on screen long enough for the 1 fps keyframe scan to see it settle after its transition.
     """
     stamps = [float(f["timestamp_sec"]) for f in frames]
     # The first slide covers the video from t=0, so that in realtime mode slide i+1 starts exactly at its real
@@ -92,11 +94,9 @@ def frame_durations(frames: list[dict], *, total_sec: float | None, lesson_end: 
     real = [max(0.5, (starts[i + 1] if i + 1 < len(starts) else lesson_end) - starts[i]) for i in range(len(starts))]
     if total_sec is None:
         return real
-    scale = total_sec / sum(real)
-    scaled = [max(1.5, d * scale) for d in real]
-    # re-normalise after applying the floor so the total is exact
-    fix = total_sec / sum(scaled)
-    return [round(d * fix, 3) for d in scaled]
+    floor = min(MIN_SLIDE_SEC, total_sec / len(real))
+    spare = total_sec - floor * len(real)
+    return [round(floor + spare * d / sum(real), 3) for d in real]
 
 
 def make_transition_frames(frames: list[dict], frames_dir: Path, tmp_dir: Path) -> list[list[Path]]:
@@ -187,7 +187,10 @@ def run_ffmpeg(concat_list: Path, out: Path, *, total_sec: float, realtime: bool
         "-pix_fmt",
         "yuv420p",
         "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+        # fps + tpad hold the last slide until the end: with only "-r" the last concat entry (one image with a
+        # long duration) collapsed to a single frame and the video stream ended ~7 s before the audio.
+        f"fps={FPS},scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
+        "tpad=stop_mode=clone:stop_duration=30",
         "-c:a",
         "aac",
         "-b:a",

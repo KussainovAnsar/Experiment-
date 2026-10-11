@@ -20,7 +20,7 @@ import { Tabs, type TabItem } from "@/components/Tabs";
 import { useToast } from "@/components/Toast";
 import { BackLink, ErrorState, Notice, PageHeader, Skeleton, StatusBadge } from "@/components/ui";
 import { SeekContext, type SeekContextValue } from "@/hooks/useSeek";
-import { formatDateTime, formatDuration, formatTimecode } from "@/lib/format";
+import { formatDateTime, formatDuration, formatElapsed, formatTimecode } from "@/lib/format";
 import type { Frame, Report, ReportKind } from "@/types/api";
 import { FramesTab } from "./FramesTab";
 import { ManagerTab } from "./ManagerTab";
@@ -181,6 +181,9 @@ export function LessonPage() {
             Ученик: <Link to={`/students/${lesson.student_id}`}>{lesson.student_name}</Link> · Преподаватель: {lesson.teacher_name} ·
             Длительность: {formatDuration(lesson.duration_sec)}
             {analysis?.topic ? ` · Тема: ${analysis.topic}` : ""}
+            {lesson.status === "done" && lesson.processing_stats?.total_sec != null
+              ? ` · Обработано за ${formatElapsed(lesson.processing_stats.total_sec)}`
+              : ""}
           </>
         }
         actions={

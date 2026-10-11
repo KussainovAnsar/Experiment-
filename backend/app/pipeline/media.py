@@ -3,14 +3,10 @@
 All functions are synchronous and CPU/IO bound — the pipeline runner calls them through
 ``asyncio.to_thread`` so the event loop stays responsive in ``PIPELINE_MODE=inline``.
 
-Keyframe strategy (docs/CONTRACT.md §1 step 4):
-
-1. scene-change frames: ``select='gt(scene,THRESH)'`` with ``showinfo`` to recover exact ``pts_time``;
-2. interval frames: one frame every ``interval_sec`` seconds;
-3. merge + sort by time, compute a dHash (8x8 → 16 hex chars) per frame and drop near-duplicates
-   (hamming distance ≤ 6 to the previously kept frame);
-4. cap to ``max_frames`` preferring scene frames spread over the whole recording;
-5. resize to max width 1280, save as ``NNNN.jpg`` (JPEG quality 85).
+Keyframe strategy (docs/CONTRACT.md §1 step 4, details in the "keyframes" section below): a cheap
+low-resolution scan of the stream's keyframes (sampled decode only when keyframes are sparse) decides *which*
+moments matter — new slides ("scene") and visible edits such as typed answers ("interval") — then only those
+≤ ``max_frames`` stills are decoded at full resolution (max width 1280, JPEG quality 85), in parallel.
 
 Audio-only inputs yield zero frames and no error. ffmpeg failures raise :class:`MediaError`
 carrying the tail of stderr.
@@ -18,6 +14,7 @@ carrying the tail of stderr.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import re
@@ -25,10 +22,12 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 from app.config import get_settings
@@ -207,41 +206,76 @@ def probe_media(path: Path, *, ffprobe_bin: str | None = None) -> MediaInfo:
 
 
 def extract_audio(src: Path, dst: Path, *, ffmpeg_bin: str | None = None) -> Path:
-    """Extract/transcode the audio track of ``src`` into ``dst`` as 16 kHz mono PCM WAV."""
+    """Extract the audio track of ``src`` into ``dst`` as 16 kHz mono PCM WAV (input of local Whisper)."""
     src, dst = Path(src), Path(dst)
     if not src.is_file():
         raise MediaError(f"extract_audio: file not found: {src}")
     dst.parent.mkdir(parents=True, exist_ok=True)
     # Per-run temp name: two runs on the same lesson must never share (and delete) each other's partial file.
     tmp = dst.with_name(f"{dst.stem}.{os.getpid()}-{secrets.token_hex(4)}.tmp.wav")
-    _run(
-        [
-            _ffmpeg_bin(ffmpeg_bin),
-            "-y",
-            "-nostdin",
-            "-v",
-            "error",
-            "-i",
-            str(src),
-            "-vn",
-            "-sn",
-            "-dn",
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            "-c:a",
-            "pcm_s16le",
-            "-f",
-            "wav",
-            str(tmp),
-        ],
-        what="ffmpeg extract_audio",
-    )
-    if not tmp.exists() or tmp.stat().st_size <= 44:
+    try:
+        _run(
+            [
+                _ffmpeg_bin(ffmpeg_bin), "-y", "-nostdin", "-v", "error", "-i", str(src),
+                "-map", "0:a:0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav", str(tmp),
+            ],
+            what="ffmpeg extract_audio",
+        )  # fmt: skip
+        if not tmp.exists() or tmp.stat().st_size <= 44:
+            raise MediaError("ffmpeg extract_audio: produced an empty wav (no audio stream?)")
+        tmp.replace(dst)
+    finally:
         tmp.unlink(missing_ok=True)
-        raise MediaError("ffmpeg extract_audio: produced an empty wav (no audio stream?)")
-    tmp.replace(dst)
+    return dst
+
+
+# Source audio codecs every cloud STT API accepts as-is: copied into a matching container, no re-encoding.
+_COPY_CONTAINERS: dict[str, tuple[str, str]] = {
+    "aac": (".m4a", "ipod"),
+    "mp3": (".mp3", "mp3"),
+    "opus": (".ogg", "ogg"),
+    "vorbis": (".ogg", "ogg"),
+    "flac": (".flac", "flac"),
+}
+COMPACT_AUDIO_BITRATE = "32k"
+
+
+def extract_compact_audio(
+    src: Path, dst_dir: Path, *, audio_codec: str | None, stem: str = "audio", ffmpeg_bin: str | None = None
+) -> Path:
+    """Write the audio track for upload to a cloud STT provider and return its path (``dst_dir/audio.<ext>``).
+
+    Zoom/Meet recordings carry AAC (sometimes Opus/MP3): that stream is *copied* into an ``.m4a``/``.ogg``/
+    ``.mp3`` file — ~1–2 s for a 45-minute lesson, no quality loss, ~5x smaller than 16 kHz PCM. Any other codec
+    is re-encoded to 16 kHz mono Ogg/Opus at :data:`COMPACT_AUDIO_BITRATE` with the fastest encoder setting
+    (~20 s for 45 minutes on one core). Previous ``audio.*`` upload copies are removed (reprocessing).
+    """
+    src, dst_dir = Path(src), Path(dst_dir)
+    if not src.is_file():
+        raise MediaError(f"extract_compact_audio: file not found: {src}")
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    copy = _COPY_CONTAINERS.get((audio_codec or "").lower())
+    ext, fmt = copy or (".ogg", "ogg")
+    dst = dst_dir / f"{stem}{ext}"
+    tmp = dst_dir / f"{stem}.{os.getpid()}-{secrets.token_hex(4)}.tmp{ext}"
+    codec_args = ["-c:a", "copy"] if copy else [
+        "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", COMPACT_AUDIO_BITRATE,
+        "-application", "voip", "-compression_level", "0",
+    ]  # fmt: skip
+    try:
+        _run(
+            [_ffmpeg_bin(ffmpeg_bin), "-y", "-nostdin", "-v", "error", "-i", str(src), "-map", "0:a:0", "-vn",
+             *codec_args, "-f", fmt, str(tmp)],
+            what="ffmpeg extract_compact_audio",
+        )  # fmt: skip
+        if not tmp.exists() or tmp.stat().st_size == 0:
+            raise MediaError("ffmpeg extract_compact_audio: produced an empty file (no audio stream?)")
+        for old in dst_dir.glob(f"{stem}.*"):
+            if old.suffix in {".m4a", ".mp3", ".ogg", ".flac"} and ".tmp" not in old.name and old != tmp:
+                old.unlink(missing_ok=True)
+        tmp.replace(dst)
+    finally:
+        tmp.unlink(missing_ok=True)
     return dst
 
 
@@ -266,7 +300,232 @@ def hamming_distance(a: str, b: str) -> int:
     return bin(int(a, 16) ^ int(b, 16)).count("1")
 
 
-# ---------------------------------------------------------------- keyframes
+# ---------------------------------------------------------------- keyframes (fast path)
+#
+# Old approach: one ffmpeg pass that decodes EVERY frame at full resolution and runs the ``scene`` filter on it.
+# For a 45-minute 1080p Zoom recording that is ~67 000 full-size frames — minutes of CPU per lesson.
+#
+# New approach (two cheap passes):
+#   1. Scan: decode only the stream's keyframes (``-skip_frame nokey``) scaled down to SCAN_W x SCAN_H grey.
+#      Encoders put a keyframe at least every few seconds and on hard cuts (slide changes), so this sees every
+#      slide at a tiny fraction of the cost. When keyframes are too sparse (long-GOP screen recordings), fall back
+#      to a sampled full decode (``fps`` filter, loop filter skipped) — still low-resolution.
+#   2. Grab: decode full-resolution stills only for the chosen ≤ max_frames timestamps, with fast input seeking,
+#      several ffmpeg processes in parallel.
+#
+# Selection works on the scan images: pixels that keep changing (webcam tiles, video playback) are masked out, a
+# large change of the static area is a "scene" (new slide/board), a small persistent change is an "edit" (the
+# student typed or the teacher wrote on the board). Scene frames are taken right after the change; edits are
+# sampled at most every ``interval_sec``, and the last state before every scene change is kept so finished
+# exercises (with the student's mistakes) are always visible to the analysis.
+
+SCAN_W, SCAN_H = 320, 180
+PIXEL_DIFF = 18  # grey-level difference that counts as "changed" on the downscaled scan
+DYNAMIC_PIXEL_SHARE = 0.10  # changing in ≥ 10 % of slide-stable scan pairs → live content (webcam, video)
+MASK_DILATE_PX = 3
+EDIT_SHARE = 0.0005  # ≥ 0.05 % of static pixels changed → content edit (≈ a typed word at 1080p)
+MAX_SCAN_SAMPLES = 3600  # sampled-decode fallback never keeps more scan images than this
+STILL_WORKERS = 4
+SCAN_PARTS = max(1, min(4, os.cpu_count() or 1))
+SCAN_PARALLEL_MIN_SEC = 300.0  # shorter recordings are scanned by a single process
+
+
+def _scan_max_gap_sec() -> float:
+    """Largest keyframe gap (s) for which the keyframe-only scan is trusted (``KEYFRAME_SCAN_MAX_GAP_SEC``)."""
+    try:
+        return float(os.environ.get("KEYFRAME_SCAN_MAX_GAP_SEC", "20"))
+    except ValueError:
+        return 20.0
+
+
+@dataclass(slots=True)
+class _Scan:
+    times: list[float]
+    images: np.ndarray  # (n, SCAN_H, SCAN_W) uint8
+    mode: str  # "keyframes" | "sampled"
+
+
+def _scan_part(
+    src: Path, *, mode: str, fps: float, start: float, length: float | None, threads: int, ffmpeg_bin: str | None
+) -> tuple[list[float], np.ndarray]:
+    """Decode one time range of the scan; timestamps are returned relative to the start of the recording."""
+    vf = [f"scale={SCAN_W}:{SCAN_H}:flags=area", "format=gray", "showinfo"]
+    if mode == "keyframes":
+        pre = ["-skip_frame", "nokey"]
+    else:
+        # 1 fps sampling needs no non-reference frames and no deblocking — both cut decode time substantially.
+        pre = ["-skip_loop_filter", "all", "-skip_frame", "noref"]
+        vf.insert(0, f"fps={fps:.4f}")
+    rng = ["-ss", f"{start:.3f}"] if start > 0 else []
+    if length is not None:
+        rng += ["-t", f"{length:.3f}"]
+    cmd = [
+        _ffmpeg_bin(ffmpeg_bin), "-nostdin", "-nostats", "-v", "info", "-threads", str(threads),
+        *pre, *rng, "-i", str(src),
+        "-map", "0:v:0", "-an", "-sn", "-vf", ",".join(vf), "-fps_mode", "passthrough",
+        "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1",
+    ]
+    log.debug("media_cmd", what=f"scan_{mode}", start=start, argv=cmd[:16])
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=_ffmpeg_timeout(), check=False)
+    except FileNotFoundError as exc:
+        raise MediaError(f"scan: binary not found: {cmd[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise MediaError(f"scan: timed out after {_ffmpeg_timeout()}s") from exc
+    stderr = proc.stderr.decode("utf-8", errors="replace")
+    if proc.returncode != 0:
+        raise MediaError(f"ffmpeg scan ({mode}): exit code {proc.returncode}: {_tail(stderr)}")
+    frame_bytes = SCAN_W * SCAN_H
+    times = [t + start for ts in _parse_showinfo(stderr).values() for t in ts]
+    n = min(len(proc.stdout) // frame_bytes, len(times))
+    images = np.frombuffer(proc.stdout[: n * frame_bytes], dtype=np.uint8).reshape(n, SCAN_H, SCAN_W)
+    return times[:n], images
+
+
+def _scan(src: Path, *, mode: str, duration_sec: float, ffmpeg_bin: str | None) -> _Scan:
+    """Decode a low-resolution grey image stream with timestamps (see the section notes).
+
+    Long recordings are split into :data:`SCAN_PARTS` time ranges decoded by parallel ffmpeg processes
+    (one decoder thread each): ~2.5x faster than one multi-threaded decoder on 4 vCPU.
+    """
+    fps = 1.0 if duration_sec <= 0 else min(1.0, MAX_SCAN_SAMPLES / duration_sec)
+    parts = SCAN_PARTS if duration_sec >= SCAN_PARALLEL_MIN_SEC else 1
+    if parts == 1:
+        times, images = _scan_part(
+            src, mode=mode, fps=fps, start=0.0, length=None, threads=0, ffmpeg_bin=ffmpeg_bin
+        )
+    else:
+        step = duration_sec / parts
+        ranges = [(i * step, None if i == parts - 1 else step) for i in range(parts)]
+        with ThreadPoolExecutor(max_workers=parts) as pool:
+            results = list(
+                pool.map(
+                    lambda r: _scan_part(
+                        src, mode=mode, fps=fps, start=r[0], length=r[1], threads=1, ffmpeg_bin=ffmpeg_bin
+                    ),
+                    ranges,
+                )
+            )
+        times, chunks = [], []
+        for part_times, part_images in results:
+            # input seeking may return a frame just before the range start: keep timestamps strictly increasing
+            keep = [i for i, t in enumerate(part_times) if not times or t > times[-1] + 1e-3]
+            times += [part_times[i] for i in keep]
+            chunks.append(part_images[keep])
+        images = np.concatenate(chunks) if chunks else np.zeros((0, SCAN_H, SCAN_W), dtype=np.uint8)
+    return _Scan(times=[round(t, 3) for t in times], images=images, mode=mode)
+
+
+def _keyframes_dense_enough(times: list[float], duration_sec: float) -> bool:
+    if len(times) < 2:
+        return False
+    edges = [0.0, *times, max(duration_sec, times[-1])]
+    return max(b - a for a, b in itertools.pairwise(edges)) <= _scan_max_gap_sec()
+
+
+def scan_video(src: Path, *, duration_sec: float, ffmpeg_bin: str | None = None) -> _Scan:
+    """Keyframe-only scan, or a sampled decode when keyframes are too sparse to see every slide."""
+    scan = _scan(src, mode="keyframes", duration_sec=duration_sec, ffmpeg_bin=ffmpeg_bin)
+    if _keyframes_dense_enough(scan.times, duration_sec):
+        return scan
+    log.info("keyframes_sparse_fallback", keyframes=len(scan.times), duration_sec=duration_sec)
+    return _scan(src, mode="sampled", duration_sec=duration_sec, ffmpeg_bin=ffmpeg_bin)
+
+
+def _static_mask(images: np.ndarray, scene_share: float) -> np.ndarray:
+    """True for pixels that are NOT live content (webcam tiles, embedded video).
+
+    Change frequency is counted only over scan pairs without a slide change (otherwise every pixel of every slide
+    would look "dynamic"); pixels changing in ≥ :data:`DYNAMIC_PIXEL_SHARE` of those pairs are dynamic, and the
+    dynamic area is dilated so the edges of a moving tile are masked too.
+    """
+    ones = np.ones(images.shape[1:], dtype=bool)
+    if len(images) < 8:
+        return ones
+    diffs = [np.abs(a.astype(np.int16) - b.astype(np.int16)) > PIXEL_DIFF for a, b in itertools.pairwise(images)]
+    calm = [d for d in diffs if d.mean() < scene_share]
+    if len(calm) < 5:
+        return ones
+    freq = np.mean(calm, axis=0)
+    dynamic = freq >= DYNAMIC_PIXEL_SHARE
+    grown = dynamic.copy()
+    r = MASK_DILATE_PX
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            grown |= np.roll(np.roll(dynamic, dy, axis=0), dx, axis=1)
+    mask = ~grown
+    return mask if mask.mean() >= 0.2 else ones
+
+
+def _changed_share(a: np.ndarray, b: np.ndarray, mask: np.ndarray, denom: int) -> float:
+    return float(np.count_nonzero((np.abs(a.astype(np.int16) - b.astype(np.int16)) > PIXEL_DIFF) & mask)) / denom
+
+
+def plan_keyframes(scan: _Scan, *, interval_sec: float, scene_share: float) -> list[tuple[float, str]]:
+    """Pick ``(timestamp, reason)`` candidates from a scan (see the section notes). Time-ordered, no duplicates.
+
+    A slide transition (fade, wipe, animation) spans several scans with large changes: it counts as ONE scene and
+    the frame is taken once the picture has settled, not mid-transition.
+    """
+    n = len(scan.times)
+    if n == 0:
+        return []
+    mask = _static_mask(scan.images, scene_share)
+    denom = max(1, int(mask.sum()))
+    steps = [0.0] + [_changed_share(scan.images[i - 1], scan.images[i], mask, denom) for i in range(1, n)]
+    picks: list[tuple[int, str]] = [(0, "interval")]
+    ref = 0  # index of the last picked image; edits are measured against it
+    i = 1
+    while i < n:
+        if steps[i] >= scene_share:
+            # keep the final state of the previous slide when it differs from what we already have
+            prev = i - 1
+            if picks[-1][0] != prev and _changed_share(scan.images[ref], scan.images[prev], mask, denom) >= EDIT_SHARE:
+                picks.append((prev, "interval"))
+            settled = i
+            while settled + 1 < n and steps[settled + 1] >= scene_share:
+                settled += 1
+            picks.append((settled, "scene"))
+            ref = settled
+            i = settled + 1
+            continue
+        due = scan.times[i] - scan.times[ref] >= interval_sec
+        if due and _changed_share(scan.images[ref], scan.images[i], mask, denom) >= EDIT_SHARE:
+            picks.append((i, "interval"))
+            ref = i
+        i += 1
+    last = n - 1
+    if picks[-1][0] != last and _changed_share(scan.images[ref], scan.images[last], mask, denom) >= EDIT_SHARE:
+        picks.append((last, "interval"))
+    return [(scan.times[k], reason) for k, reason in picks]
+
+
+def _grab_still(src: Path, t: float, dst: Path, ffmpeg_bin: str | None) -> None:
+    _run(
+        [
+            _ffmpeg_bin(ffmpeg_bin),
+            "-y",
+            "-nostdin",
+            "-v",
+            "error",
+            "-ss",
+            f"{t:.3f}",
+            "-i",
+            str(src),
+            "-map",
+            "0:v:0",
+            "-frames:v",
+            "1",
+            "-vf",
+            f"scale='min({MAX_FRAME_WIDTH},iw)':-2",
+            "-q:v",
+            "2",
+            str(dst),
+        ],
+        what="ffmpeg grab_still",
+    )
+    if not dst.exists():
+        raise MediaError(f"ffmpeg grab_still: no frame at {t:.3f}s")
 
 
 @dataclass(slots=True)
@@ -283,87 +542,6 @@ def _parse_showinfo(stderr: str) -> dict[int, list[float]]:
     for m in _SHOWINFO_RE.finditer(stderr):
         out.setdefault(int(m.group(1)), []).append(max(0.0, float(m.group(2))))
     return out
-
-
-def _collect(tmp_dir: Path, prefix: str, timestamps: list[float], reason: str) -> list[_Candidate]:
-    files = sorted(tmp_dir.glob(f"{prefix}_*.jpg"))
-    n = min(len(files), len(timestamps))
-    if len(files) != len(timestamps):
-        log.warning("keyframes_count_mismatch", reason=reason, files=len(files), showinfo=len(timestamps))
-    return [_Candidate(timestamp_sec=round(timestamps[i], 3), reason=reason, tmp_path=files[i]) for i in range(n)]
-
-
-def _run_extraction(
-    src: Path, tmp_dir: Path, *, interval_sec: int, scene_threshold: float, ffmpeg_bin: str | None
-) -> list[_Candidate]:
-    """Single decode pass producing scene and interval candidates (two filter branches)."""
-    interval = max(1, int(interval_sec))
-    scale = f"scale='min({MAX_FRAME_WIDTH},iw)':-2"
-    graph = (
-        "[0:v]split=2[sc_in][iv_in];"
-        f"[sc_in]select='gt(scene,{scene_threshold:.4f})',{scale},showinfo[sc];"
-        f"[iv_in]select='isnan(prev_selected_t)+gte(t-prev_selected_t,{interval})',{scale},showinfo[iv]"
-    )
-    cmd = [
-        _ffmpeg_bin(ffmpeg_bin),
-        "-y",
-        "-nostdin",
-        "-nostats",
-        "-v",
-        "info",
-        "-i",
-        str(src),
-        "-filter_complex",
-        graph,
-        "-map",
-        "[sc]",
-        "-fps_mode",
-        "vfr",
-        "-an",
-        "-q:v",
-        "2",
-        "-f",
-        "image2",
-        str(tmp_dir / "scene_%05d.jpg"),
-        "-map",
-        "[iv]",
-        "-fps_mode",
-        "vfr",
-        "-an",
-        "-q:v",
-        "2",
-        "-f",
-        "image2",
-        str(tmp_dir / "interval_%05d.jpg"),
-    ]
-    proc = _run(cmd, what="ffmpeg extract_keyframes")
-    groups = _parse_showinfo(proc.stderr)
-    ordered = [groups[k] for k in sorted(groups)]
-    scene_ts = ordered[0] if len(ordered) >= 1 else []
-    interval_ts = ordered[1] if len(ordered) >= 2 else []
-    # When one branch selected nothing its showinfo never prints; disambiguate by file counts.
-    n_scene = len(list(tmp_dir.glob("scene_*.jpg")))
-    n_interval = len(list(tmp_dir.glob("interval_*.jpg")))
-    if len(ordered) == 1 and n_scene == 0 and n_interval > 0:
-        scene_ts, interval_ts = [], ordered[0]
-    return _collect(tmp_dir, "scene", scene_ts, "scene") + _collect(tmp_dir, "interval", interval_ts, "interval")
-
-
-def _dedupe(candidates: list[_Candidate], threshold: int = DEDUP_HAMMING_THRESHOLD) -> list[_Candidate]:
-    """Sort by time, drop interval frames that coincide with a scene frame, then drop near-duplicates."""
-    # Scene frames win over interval frames taken within half a second of them.
-    candidates.sort(key=lambda c: (c.timestamp_sec, 0 if c.reason == "scene" else 1))
-    merged: list[_Candidate] = []
-    for cand in candidates:
-        if merged and cand.reason == "interval" and abs(cand.timestamp_sec - merged[-1].timestamp_sec) < 0.5:
-            continue
-        merged.append(cand)
-    kept: list[_Candidate] = []
-    for cand in merged:
-        if kept and hamming_distance(cand.phash, kept[-1].phash) <= threshold:
-            continue
-        kept.append(cand)
-    return kept
 
 
 def _spread(items: list[_Candidate], count: int) -> list[_Candidate]:
@@ -420,37 +598,43 @@ def extract_keyframes(
     max_frames: int,
     ffmpeg_bin: str | None = None,
     ffprobe_bin: str | None = None,
+    has_video: bool | None = None,
 ) -> list[ExtractedFrame]:
-    """Extract deduplicated keyframes of ``src`` into ``out_dir/NNNN.jpg`` and return them in time order.
+    """Extract keyframes of ``src`` into ``out_dir/NNNN.jpg`` and return them in time order.
 
     Args:
         src: source video (or audio — then an empty list is returned).
         out_dir: destination directory; previous ``NNNN.jpg`` files are removed first (reprocessing).
-        duration_sec: media duration from :func:`probe_media` (used for logging / sanity checks).
-        interval_sec: periodic sampling interval.
-        scene_threshold: ffmpeg ``scene`` score threshold (0..1), e.g. 0.30.
-        max_frames: hard cap on returned frames.
+        duration_sec: media duration from :func:`probe_media`.
+        interval_sec: minimum spacing of "edit" frames inside one slide.
+        scene_threshold: share (0..1) of static pixels that must change between two scans to count as a new
+            slide/scene, e.g. 0.10.
+        max_frames: hard cap on returned frames (scene frames preferred, spread over the recording).
+        has_video: pass ``MediaInfo.has_video`` to skip the extra ffprobe call.
     """
     src, out_dir = Path(src), Path(out_dir)
     if not src.is_file():
         raise MediaError(f"extract_keyframes: file not found: {src}")
-    info = probe_media(src, ffprobe_bin=ffprobe_bin)
+    if has_video is None or duration_sec <= 0:
+        info = probe_media(src, ffprobe_bin=ffprobe_bin)
+        has_video, duration_sec = info.has_video, info.duration_sec
     out_dir.mkdir(parents=True, exist_ok=True)
     _clear_previous_frames(out_dir)
-    if not info.has_video:
+    if not has_video:
         log.info("keyframes_skipped_audio_only", src=str(src.name))
         return []
 
+    scan = scan_video(src, duration_sec=duration_sec, ffmpeg_bin=ffmpeg_bin)
+    planned = plan_keyframes(scan, interval_sec=max(1, int(interval_sec)), scene_share=scene_threshold)
+    candidates = [_Candidate(timestamp_sec=t, reason=r, tmp_path=Path()) for t, r in planned]
+    chosen = select_spread(candidates, max_frames)
+
     tmp_dir = Path(tempfile.mkdtemp(prefix="llframes-", dir=str(out_dir)))
     try:
-        candidates = _run_extraction(
-            src, tmp_dir, interval_sec=interval_sec, scene_threshold=scene_threshold, ffmpeg_bin=ffmpeg_bin
-        )
-        for cand in candidates:
-            with Image.open(cand.tmp_path) as im:
-                cand.phash = dhash(im)
-        deduped = _dedupe(candidates)
-        chosen = select_spread(deduped, max_frames)
+        for i, cand in enumerate(chosen):
+            cand.tmp_path = tmp_dir / f"{i:04d}.jpg"
+        with ThreadPoolExecutor(max_workers=min(STILL_WORKERS, max(1, len(chosen)))) as pool:
+            list(pool.map(lambda c: _grab_still(src, c.timestamp_sec, c.tmp_path, ffmpeg_bin), chosen))
         frames: list[ExtractedFrame] = []
         for idx, cand in enumerate(chosen):
             dst = out_dir / f"{idx:04d}.jpg"
@@ -467,15 +651,16 @@ def extract_keyframes(
                         path=dst,
                         width=rgb.width,
                         height=rgb.height,
-                        phash=cand.phash,
+                        phash=dhash(rgb),
                         reason=cand.reason,
                     )
                 )
         log.info(
             "keyframes_extracted",
             duration_sec=duration_sec,
+            scan_mode=scan.mode,
+            scanned=len(scan.times),
             candidates=len(candidates),
-            after_dedup=len(deduped),
             kept=len(frames),
             scene=sum(1 for f in frames if f.reason == "scene"),
         )

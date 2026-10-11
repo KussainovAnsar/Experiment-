@@ -209,6 +209,17 @@ export interface Lesson {
   consent_confirmed?: boolean;
   created_at: string;
   processed_at: string | null;
+  processing_stats?: ProcessingStats | null;
+}
+
+/** Wall-clock of the last processing run (backend lessons.processing_stats). */
+export interface ProcessingStats {
+  total_sec: number;
+  stages_ms?: Record<string, number>;
+  media_duration_sec?: number;
+  speed_x?: number | null;
+  stt_provider?: string;
+  llm_provider?: string;
 }
 
 export interface Frame {

@@ -1,4 +1,4 @@
-"""Filesystem layout under MEDIA_ROOT: media/{center_id}/{lesson_id}/{source.ext|audio.wav|frames/NNNN.jpg}."""
+"""Filesystem layout under MEDIA_ROOT: media/{center_id}/{lesson_id}/{source.ext|audio.wav|audio.ogg|frames/*.jpg}."""
 
 from __future__ import annotations
 
@@ -39,6 +39,11 @@ def source_path(center_id: uuid.UUID, lesson_id: uuid.UUID, original_filename: s
 def audio_path(center_id: uuid.UUID, lesson_id: uuid.UUID) -> Path:
     """Return the path of the extracted 16 kHz mono wav: ``.../audio.wav``."""
     return lesson_dir(center_id, lesson_id) / "audio.wav"
+
+
+def compact_audio_path(center_id: uuid.UUID, lesson_id: uuid.UUID) -> Path:
+    """Return the path of the compact Ogg/Opus copy uploaded to cloud STT providers: ``.../audio.ogg``."""
+    return lesson_dir(center_id, lesson_id) / "audio.ogg"
 
 
 def is_within_media_root(path: Path) -> bool:

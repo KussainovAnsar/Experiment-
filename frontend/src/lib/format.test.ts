@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, formatPercent, formatTimecode, pluralize } from "./format";
+import { formatDuration, formatPercent, formatTimecode, pluralize, formatElapsed } from "./format";
 
 describe("formatTimecode", () => {
   it("formats seconds as mm:ss", () => {
@@ -36,5 +36,13 @@ describe("formatDuration / formatPercent / pluralize", () => {
     expect(pluralize(3, ["урок", "урока", "уроков"])).toBe("3 урока");
     expect(pluralize(11, ["урок", "урока", "уроков"])).toBe("11 уроков");
     expect(pluralize(22, ["урок", "урока", "уроков"])).toBe("22 урока");
+  });
+});
+
+describe("formatElapsed", () => {
+  it("formats seconds and minutes", () => {
+    expect(formatElapsed(48.2)).toBe("48 с");
+    expect(formatElapsed(125)).toBe("2 мин 05 с");
+    expect(formatElapsed(null)).toBe("—");
   });
 });

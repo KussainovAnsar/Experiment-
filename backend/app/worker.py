@@ -1,6 +1,7 @@
 """Job worker: ``python -m app.worker`` (``PIPELINE_MODE=worker``).
 
-Polls the ``jobs`` table every 2 s, claims one job at a time with ``FOR UPDATE SKIP LOCKED`` and runs it.
+Polls the ``jobs`` table every 2 s and runs up to ``WORKER_CONCURRENCY`` jobs at once, each claimed with
+``FOR UPDATE SKIP LOCKED``.
 ``process_lesson`` jobs run :func:`app.pipeline.runner.run_lesson_pipeline_detailed`; a lesson that ends in
 ``failed`` fails the job, which is retried with exponential backoff up to ``max_attempts`` **only for transient
 errors** (STT/LLM/network) — deterministic failures (bad media, invalid model output, DB constraint, missing
@@ -83,38 +84,74 @@ async def run_once(*, worker_id: str, sessionmaker: async_sessionmaker | None = 
         return True
 
 
+def worker_concurrency() -> int:
+    """How many lessons one worker process handles at once (``WORKER_CONCURRENCY``, default 2).
+
+    Most of a lesson's wall-clock is waiting on cloud STT/LLM, so 2–4 parallel lessons keep a 4-core box busy
+    without slowing each other down. With ``STT_PROVIDER=whisper_local`` on CPU keep it at 1 — the model already
+    uses every core.
+    """
+    try:
+        return max(1, int(os.environ.get("WORKER_CONCURRENCY", "2")))
+    except ValueError:
+        return 2
+
+
 async def run_worker(
     *,
     poll_interval: float = DEFAULT_POLL_INTERVAL_SEC,
     worker_id: str | None = None,
     stop_event: asyncio.Event | None = None,
     sessionmaker: async_sessionmaker | None = None,
+    concurrency: int | None = None,
 ) -> None:
-    """Main loop: process jobs until ``stop_event`` is set."""
+    """Main loop: process jobs until ``stop_event`` is set, ``concurrency`` jobs at a time.
+
+    Each slot claims its own job with ``FOR UPDATE SKIP LOCKED``, so slots (and other worker processes) never
+    pick the same lesson.
+    """
     worker_id = worker_id or default_worker_id()
     stop_event = stop_event or asyncio.Event()
     sm = sessionmaker or get_sessionmaker()
+    slots = concurrency or worker_concurrency()
+    log.info("worker_start", worker_id=worker_id, poll_interval=poll_interval, concurrency=slots)
+    await asyncio.gather(
+        *(
+            _slot_loop(
+                slot_id=worker_id if slots == 1 else f"{worker_id}/{i}",
+                poll_interval=poll_interval,
+                stop_event=stop_event,
+                sm=sm,
+                release_stale=i == 0,
+            )
+            for i in range(slots)
+        )
+    )
+    log.info("worker_stop", worker_id=worker_id)
+
+
+async def _slot_loop(
+    *, slot_id: str, poll_interval: float, stop_event: asyncio.Event, sm: async_sessionmaker, release_stale: bool
+) -> None:
     stale_hours = float(os.environ.get("WORKER_STALE_JOB_HOURS", "3"))
-    log.info("worker_start", worker_id=worker_id, poll_interval=poll_interval)
     last_stale_check = -_STALE_CHECK_EVERY_SEC
     loop = asyncio.get_running_loop()
     while not stop_event.is_set():
         now = loop.time()
-        if now - last_stale_check >= _STALE_CHECK_EVERY_SEC:
+        if release_stale and now - last_stale_check >= _STALE_CHECK_EVERY_SEC:
             last_stale_check = now
             with contextlib.suppress(Exception):
                 async with sm() as session:
                     await jobs.release_stale(session, older_than=timedelta(hours=stale_hours))
         try:
-            processed = await run_once(worker_id=worker_id, sessionmaker=sm)
+            processed = await run_once(worker_id=slot_id, sessionmaker=sm)
         except Exception:
-            log.exception("worker_iteration_failed")
+            log.exception("worker_iteration_failed", slot=slot_id)
             processed = False
         if processed:
             continue
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)
-    log.info("worker_stop", worker_id=worker_id)
 
 
 async def _main_async() -> None:

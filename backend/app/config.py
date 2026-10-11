@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     pipeline_mode: Literal["inline", "worker"] = "inline"
     max_upload_mb: int = 2048
     keyframe_interval_sec: int = 30
-    keyframe_scene_threshold: float = 0.30
+    keyframe_scene_threshold: float = 0.06
     keyframe_max: int = 40
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"

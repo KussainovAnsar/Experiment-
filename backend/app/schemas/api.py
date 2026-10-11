@@ -245,6 +245,10 @@ class LessonOut(BaseModel):
     consent_confirmed: bool
     created_at: datetime
     processed_at: datetime | None
+    processing_stats: dict[str, Any] | None = Field(
+        default=None,
+        description="Wall-clock of the last processing run: total_sec, stages_ms, media_duration_sec, speed_x",
+    )
 
 
 class FrameOut(BaseModel):

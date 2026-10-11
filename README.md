@@ -100,7 +100,9 @@ cd ../frontend && npm install && npm run dev            # http://localhost:5173
 | `WHATSAPP_ENABLED` … | Meta Cloud API | заготовка: free-form сообщения, шаблоны не реализованы |
 | `MESSAGING_PROVIDER=mock` | | все сообщения в память — для тестов и сидирования |
 | `PIPELINE_MODE` | `inline` \| `worker` | `inline` — обработка фоновой задачей в API-процессе (демо); `worker` — очередь в таблице `jobs`, отдельный процесс `python -m app.worker` |
-| `KEYFRAME_INTERVAL_SEC`, `KEYFRAME_SCENE_THRESHOLD`, `KEYFRAME_MAX` | | извлечение кадров ffmpeg + dHash-дедупликация |
+| `KEYFRAME_INTERVAL_SEC`, `KEYFRAME_SCENE_THRESHOLD`, `KEYFRAME_MAX`, `KEYFRAME_SCAN_MAX_GAP_SEC` | | быстрый поиск ключевых кадров (см. `docs/PERFORMANCE.md`) |
+| `WHISPER_DEVICE`, `WHISPER_BEAM_SIZE`, `WHISPER_BATCH_SIZE`, `WHISPER_CPU_THREADS` | | скорость локального Whisper |
+| `WORKER_CONCURRENCY`, `PIPELINE_HEARTBEAT_SEC` | | параллельная обработка уроков, статус долгих этапов |
 | `PUBLIC_BASE_URL` | адрес фронтенда | из него собираются magic-ссылки `…/p/<token>` |
 
 Сравнение STT-провайдеров по WER/CER для ru/kk/смешанной речи, цены и рекомендация для пилота —
@@ -177,6 +179,7 @@ docker-compose.yml, Makefile, .env.example
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | обзор системы, пайплайн, где лежат персональные данные, деплой, дорожная карта |
 | [docs/DEMO.md](docs/DEMO.md) | сценарий демонстрации: что кликать, демо-поток родителя, troubleshooting |
 | [docs/PROVIDERS.md](docs/PROVIDERS.md) | STT/LLM-провайдеры: бенчмарк WER/CER ru/kk, цены, рекомендация для пилота |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | скорость обработки: замеры до/после на 45-минутной записи 1080p, где теперь время |
 | [docs/MESSAGING.md](docs/MESSAGING.md) | Telegram-бот, WhatsApp-заготовка, уведомления |
 | [docs/FRONTEND.md](docs/FRONTEND.md) | структура фронтенда, маршруты, состояния |
 | [docs/LEGAL_KZ.md](docs/LEGAL_KZ.md) | персональные данные детей по законодательству РК, роли, чек-лист пилота (не юридическая консультация) |

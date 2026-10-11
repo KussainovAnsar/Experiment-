@@ -19,8 +19,10 @@ stage time; tests may override them through :data:`HOOK_OVERRIDES`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib
 import inspect
+import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -30,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -40,7 +42,15 @@ from app.db.models import Frame, FrameReason, Lesson, LessonStatus, MediaKind, T
 from app.db.session import get_sessionmaker
 from app.logging import get_logger
 from app.pipeline import jobs, locking
-from app.pipeline.media import ExtractedFrame, MediaError, MediaInfo, extract_audio, extract_keyframes, probe_media
+from app.pipeline.media import (
+    ExtractedFrame,
+    MediaError,
+    MediaInfo,
+    extract_audio,
+    extract_compact_audio,
+    extract_keyframes,
+    probe_media,
+)
 from app.pipeline.media import spread_indices as _spread_indices
 from app.providers.stt.base import ProviderNotConfigured, STTError, TranscriptResult
 from app.providers.stt.registry import get_stt_provider
@@ -83,7 +93,7 @@ class PipelineResult:
 STAGE_MESSAGES: dict[LessonStatus, str] = {
     LessonStatus.probing: "Читаем метаданные записи",
     LessonStatus.extracting_audio: "Извлекаем аудиодорожку",
-    LessonStatus.transcribing: "Распознаём речь",
+    LessonStatus.transcribing: "Распознаём речь (кадры извлекаются параллельно)",
     LessonStatus.extracting_frames: "Извлекаем ключевые кадры",
     LessonStatus.analyzing: "Анализируем урок",
     LessonStatus.reporting: "Формируем отчёты",
@@ -134,6 +144,11 @@ def _paths(settings: Settings, center_id: uuid.UUID, lesson_id: uuid.UUID) -> tu
         frames = base / "frames"
         frames.mkdir(parents=True, exist_ok=True)
         return base, base / "audio.wav", frames
+
+
+def _wants_compact_audio(provider: Any) -> bool:
+    """Cloud providers upload the (copied) source audio track; local Whisper and chunking providers read the WAV."""
+    return bool(getattr(provider, "prefers_compact_audio", False))
 
 
 # ---------------------------------------------------------------- public API
@@ -209,6 +224,8 @@ async def run_lesson_pipeline_detailed(
     settings = get_settings()
     structlog.contextvars.bind_contextvars(lesson_id=str(lesson_id))
     started = time.monotonic()
+    timings: dict[str, int] = {}
+    info: MediaInfo | None = None
     current_stage: LessonStatus = LessonStatus.probing
     try:
         lesson = await _load_lesson(sm, lesson_id)
@@ -228,28 +245,60 @@ async def run_lesson_pipeline_detailed(
         _, audio_dst, frames_out = _paths(settings, center_id, lesson_id)
 
         current_stage = LessonStatus.probing
-        info = await _timed(current_stage, _stage_probe(sm, lesson_id, source, settings))
+        info = await _timed(current_stage, _stage_probe(sm, lesson_id, source, settings), timings)
 
-        current_stage = LessonStatus.extracting_audio
-        await _timed(current_stage, _stage_extract_audio(sm, lesson_id, source, audio_dst, settings))
+        # Two independent branches run concurrently: (audio → speech recognition) and (keyframes). STT is by far
+        # the longest stage, so the frames are ready long before the transcript and add no wall-clock time.
+        frames_task = asyncio.create_task(
+            _timed(
+                LessonStatus.extracting_frames,
+                _stage_extract_frames(sm, lesson_id, source, frames_out, info, settings, set_status=False),
+                timings,
+            ),
+            name=f"lesson-frames-{lesson_id}",
+        )
+        try:
+            stt = get_stt_provider(settings)
+            current_stage = LessonStatus.extracting_audio
+            audio = await _timed(
+                current_stage, _stage_extract_audio(sm, lesson_id, source, audio_dst, info, stt, settings), timings
+            )
 
-        current_stage = LessonStatus.transcribing
-        await _timed(current_stage, _stage_transcribe(sm, lesson_id, audio_dst, language_hints, settings))
+            current_stage = LessonStatus.transcribing
+            await _timed(
+                current_stage,
+                _with_heartbeat(
+                    sm, lesson_id, current_stage, _stage_transcribe(sm, lesson_id, audio, language_hints, stt)
+                ),
+                timings,
+            )
+        except BaseException:
+            # Let the frames branch finish (it cannot be interrupted mid-ffmpeg) so no late write lands after
+            # the lesson is marked failed; its own error, if any, is secondary.
+            with contextlib.suppress(BaseException):
+                await frames_task
+            raise
 
         current_stage = LessonStatus.extracting_frames
-        await _timed(current_stage, _stage_extract_frames(sm, lesson_id, source, frames_out, info, settings))
+        if not frames_task.done():
+            await _set_status(sm, lesson_id, current_stage, STAGE_MESSAGES[current_stage])
+        await frames_task
 
         current_stage = LessonStatus.analyzing
-        await _timed(current_stage, _stage_analyze(sm, lesson_id))
+        analyze = _with_heartbeat(sm, lesson_id, current_stage, _stage_analyze(sm, lesson_id))
+        await _timed(current_stage, analyze, timings)
 
         current_stage = LessonStatus.reporting
-        await _timed(current_stage, _stage_report(sm, lesson_id))
+        await _timed(current_stage, _stage_report(sm, lesson_id), timings)
 
         current_stage = LessonStatus.notifying
-        await _timed(current_stage, _stage_notify(sm, lesson_id))
+        await _timed(current_stage, _stage_notify(sm, lesson_id), timings)
 
-        await _set_status(sm, lesson_id, LessonStatus.done, STAGE_MESSAGES[LessonStatus.done], done=True)
-        log.info("pipeline_done", total_ms=int((time.monotonic() - started) * 1000))
+        stats = _processing_stats(timings, started, info, settings)
+        await _set_status(
+            sm, lesson_id, LessonStatus.done, STAGE_MESSAGES[LessonStatus.done], done=True, processing_stats=stats
+        )
+        log.info("pipeline_done", total_ms=int((time.monotonic() - started) * 1000), speed_x=stats.get("speed_x"))
         return PipelineResult(LessonStatus.done)
     except asyncio.CancelledError:
         log.warning("pipeline_cancelled", stage=current_stage.value)
@@ -262,7 +311,9 @@ async def run_lesson_pipeline_detailed(
         error_type = type(exc).__name__
         log.exception("pipeline_failed", stage=current_stage.value, error_type=error_type)
         try:
-            await _mark_failed(sm, lesson_id, current_stage, exc)
+            await _mark_failed(
+                sm, lesson_id, current_stage, exc, processing_stats=_processing_stats(timings, started, info, settings)
+            )
         except Exception:  # pragma: no cover - last resort, DB unavailable
             log.exception("pipeline_mark_failed_error")
         return PipelineResult(LessonStatus.failed, error_type, is_retryable(exc))
@@ -285,12 +336,79 @@ def is_retryable(exc: BaseException) -> bool:
 # ---------------------------------------------------------------- stage plumbing
 
 
-async def _timed(stage: LessonStatus, coro: Awaitable[Any]) -> Any:
+async def _timed(stage: LessonStatus, coro: Awaitable[Any], timings: dict[str, int] | None = None) -> Any:
     t0 = time.monotonic()
     log.info("stage_start", stage=stage.value)
     result = await coro
-    log.info("stage_end", stage=stage.value, elapsed_ms=int((time.monotonic() - t0) * 1000))
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    if timings is not None:
+        timings[stage.value] = elapsed_ms
+    log.info("stage_end", stage=stage.value, elapsed_ms=elapsed_ms)
     return result
+
+
+def _heartbeat_interval() -> float:
+    try:
+        return max(1.0, float(os.environ.get("PIPELINE_HEARTBEAT_SEC", "20")))
+    except ValueError:
+        return 20.0
+
+
+def _elapsed_ru(seconds: float) -> str:
+    seconds = int(seconds)
+    return f"{seconds // 60} мин {seconds % 60:02d} с" if seconds >= 60 else f"{seconds} с"
+
+
+async def _with_heartbeat(
+    sm: async_sessionmaker, lesson_id: uuid.UUID, stage: LessonStatus, coro: Awaitable[Any]
+) -> Any:
+    """Await ``coro`` while refreshing ``status_message`` (and thus ``updated_at``) every few seconds.
+
+    The centre sees that a long stage (speech recognition of a 90-minute lesson) is alive — «Распознаём речь ·
+    3 мин 20 с» — and the stale-claim guard (``locking``, 30 min of no updates) never mistakes a slow but
+    healthy run for an abandoned one.
+    """
+    started = time.monotonic()
+    base = STAGE_MESSAGES.get(stage, stage.value)
+
+    async def beat() -> None:
+        while True:
+            await asyncio.sleep(_heartbeat_interval())
+            message = f"{base} · {_elapsed_ru(time.monotonic() - started)}"
+            with contextlib.suppress(Exception):
+                async with sm() as session:
+                    await session.execute(
+                        update(Lesson)
+                        .where(Lesson.id == lesson_id, Lesson.status == stage)
+                        .values(status_message=message[:_STATUS_MESSAGE_MAX])
+                    )
+                    await session.commit()
+
+    task = asyncio.create_task(beat(), name=f"lesson-heartbeat-{lesson_id}")
+    try:
+        return await coro
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+def _processing_stats(
+    timings: dict[str, int], started: float, info: MediaInfo | None, settings: Settings
+) -> dict[str, Any]:
+    """Per-stage wall-clock times stored on the lesson (``lessons.processing_stats``) for the UI and tuning."""
+    total_sec = round(time.monotonic() - started, 1)
+    stats: dict[str, Any] = {
+        "total_sec": total_sec,
+        "stages_ms": dict(timings),
+        "stt_provider": settings.stt_provider,
+        "llm_provider": settings.llm_provider,
+        "parallel_frames": True,
+    }
+    if info is not None and info.duration_sec:
+        stats["media_duration_sec"] = info.duration_sec
+        stats["speed_x"] = round(info.duration_sec / total_sec, 1) if total_sec > 0 else None
+    return stats
 
 
 async def _load_lesson(sm: async_sessionmaker, lesson_id: uuid.UUID) -> Lesson | None:
@@ -299,7 +417,13 @@ async def _load_lesson(sm: async_sessionmaker, lesson_id: uuid.UUID) -> Lesson |
 
 
 async def _set_status(
-    sm: async_sessionmaker, lesson_id: uuid.UUID, status: LessonStatus, message: str, *, done: bool = False
+    sm: async_sessionmaker,
+    lesson_id: uuid.UUID,
+    status: LessonStatus,
+    message: str,
+    *,
+    done: bool = False,
+    processing_stats: dict[str, Any] | None = None,
 ) -> None:
     """Write ``status``/``status_message`` (and ``processed_at`` when ``done``) in a dedicated transaction."""
     async with sm() as session:
@@ -312,6 +436,8 @@ async def _set_status(
             lesson.error = None
         if done:
             lesson.processed_at = datetime.now(UTC)
+        if processing_stats is not None:
+            lesson.processing_stats = processing_stats
         await session.commit()
 
 
@@ -348,7 +474,14 @@ def _failure_message(stage: LessonStatus, exc: BaseException) -> str:
     return f"Ошибка на этапе «{stage_ru}»: {type(exc).__name__}: {redact_paths(str(exc))}"
 
 
-async def _mark_failed(sm: async_sessionmaker, lesson_id: uuid.UUID, stage: LessonStatus, exc: BaseException) -> None:
+async def _mark_failed(
+    sm: async_sessionmaker,
+    lesson_id: uuid.UUID,
+    stage: LessonStatus,
+    exc: BaseException,
+    *,
+    processing_stats: dict[str, Any] | None = None,
+) -> None:
     async with sm() as session:
         lesson = await session.get(Lesson, lesson_id)
         if lesson is None:
@@ -356,6 +489,8 @@ async def _mark_failed(sm: async_sessionmaker, lesson_id: uuid.UUID, stage: Less
         lesson.status = LessonStatus.failed
         lesson.status_message = _failure_message(stage, exc)[:_STATUS_MESSAGE_MAX]
         lesson.error = redact_paths(f"[{stage.value}] {type(exc).__name__}: {exc}")[:_ERROR_MAX_CHARS]
+        if processing_stats is not None:
+            lesson.processing_stats = processing_stats
         await session.commit()
 
 
@@ -389,24 +524,41 @@ async def _stage_probe(sm: async_sessionmaker, lesson_id: uuid.UUID, source: Pat
 
 
 async def _stage_extract_audio(
-    sm: async_sessionmaker, lesson_id: uuid.UUID, source: Path, audio_dst: Path, settings: Settings
+    sm: async_sessionmaker,
+    lesson_id: uuid.UUID,
+    source: Path,
+    audio_dst: Path,
+    info: MediaInfo,
+    provider: Any,
+    settings: Settings,
 ) -> Path:
+    """Prepare the provider's input: the copied source audio track for cloud STT, a 16 kHz WAV otherwise."""
     await _set_status(sm, lesson_id, LessonStatus.extracting_audio, STAGE_MESSAGES[LessonStatus.extracting_audio])
-    await asyncio.to_thread(extract_audio, source, audio_dst, ffmpeg_bin=settings.ffmpeg_bin)
+    if _wants_compact_audio(provider):
+        audio = await asyncio.to_thread(
+            extract_compact_audio,
+            source,
+            audio_dst.parent,
+            audio_codec=info.audio_codec,
+            stem=audio_dst.stem,
+            ffmpeg_bin=settings.ffmpeg_bin,
+        )
+    else:
+        audio = await asyncio.to_thread(extract_audio, source, audio_dst, ffmpeg_bin=settings.ffmpeg_bin)
     async with sm() as session:
         lesson = await session.get(Lesson, lesson_id)
         if lesson is None:
             raise RuntimeError("lesson disappeared")
-        lesson.audio_path = str(audio_dst)
+        lesson.audio_path = str(audio)
         await session.commit()
-    return audio_dst
+    log.info("audio_ready", file=audio.name, size_bytes=audio.stat().st_size, codec=info.audio_codec)
+    return audio
 
 
 async def _stage_transcribe(
-    sm: async_sessionmaker, lesson_id: uuid.UUID, audio: Path, language_hints: list[str], settings: Settings
+    sm: async_sessionmaker, lesson_id: uuid.UUID, audio: Path, language_hints: list[str], provider: Any
 ) -> TranscriptResult:
     await _set_status(sm, lesson_id, LessonStatus.transcribing, STAGE_MESSAGES[LessonStatus.transcribing])
-    provider = get_stt_provider(settings)
     result = provider.transcribe(audio, language_hints=language_hints)
     if inspect.isawaitable(result):
         result = await result
@@ -445,6 +597,8 @@ async def _stage_extract_frames(
     frames_out: Path,
     info: MediaInfo,
     settings: Settings,
+    *,
+    set_status: bool = True,
 ) -> list[ExtractedFrame]:
     if not info.has_video:
         # Audio-only: no frames stage, but drop frames of a previous (video) run just in case.
@@ -453,7 +607,10 @@ async def _stage_extract_frames(
             await session.commit()
         log.info("frames_skipped_audio_only")
         return []
-    await _set_status(sm, lesson_id, LessonStatus.extracting_frames, STAGE_MESSAGES[LessonStatus.extracting_frames])
+    if set_status:
+        await _set_status(
+            sm, lesson_id, LessonStatus.extracting_frames, STAGE_MESSAGES[LessonStatus.extracting_frames]
+        )
     frames = await asyncio.to_thread(
         extract_keyframes,
         source,
@@ -464,6 +621,7 @@ async def _stage_extract_frames(
         max_frames=settings.keyframe_max,
         ffmpeg_bin=settings.ffmpeg_bin,
         ffprobe_bin=settings.ffprobe_bin,
+        has_video=info.has_video,
     )
     selected = set(_spread_indices(len(frames), settings.llm_max_frames))
     async with sm() as session:

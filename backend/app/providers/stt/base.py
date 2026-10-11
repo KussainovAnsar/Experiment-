@@ -8,13 +8,14 @@ segment is ``unknown`` and ``speaker_map`` is empty.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import os
 import re
 import subprocess
 import tempfile
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -224,6 +225,32 @@ def env_timeout(name: str, default: float) -> float:
         return float(os.environ.get(name, default))
     except ValueError:
         return default
+
+
+_AUDIO_CONTENT_TYPES = {
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+}
+
+
+def audio_content_type(path: Path) -> str:
+    """MIME type of an audio file we upload (by extension)."""
+    return _AUDIO_CONTENT_TYPES.get(Path(path).suffix.lower(), "application/octet-stream")
+
+
+async def aiter_file(path: Path, chunk_size: int = 1 << 20) -> AsyncIterator[bytes]:
+    """Stream a file to ``httpx.AsyncClient(content=...)`` without loading it into memory.
+
+    httpx refuses a plain (sync) file object as ``content`` of an async request, so uploads must go through
+    an async iterator.
+    """
+    with Path(path).open("rb") as fh:
+        while chunk := await asyncio.to_thread(fh.read, chunk_size):
+            yield chunk
 
 
 def transcode_for_upload(src: Path, *, bitrate: str = "32k", ffmpeg_bin: str = "ffmpeg") -> Path:

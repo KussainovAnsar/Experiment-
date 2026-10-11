@@ -22,6 +22,7 @@ from app.providers.stt.base import (
     STTError,
     TranscriptResult,
     Word,
+    aiter_file,
     env_timeout,
     finalize,
     primary_language,
@@ -37,6 +38,7 @@ class AssemblyAIProvider:
     """AssemblyAI REST adapter."""
 
     name = "assemblyai"
+    prefers_compact_audio = True  # Ogg/Opus upload: ~8x smaller than the WAV
 
     def __init__(self, api_key: str) -> None:
         if not api_key:
@@ -64,8 +66,7 @@ class AssemblyAIProvider:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
-                with audio_path.open("rb") as fh:
-                    up = await client.post(f"{BASE_URL}/upload", content=fh)
+                up = await client.post(f"{BASE_URL}/upload", content=aiter_file(audio_path))
                 if up.status_code >= 400:
                     raise STTError(f"AssemblyAI upload HTTP {up.status_code}: {up.text[:500]}")
                 payload["audio_url"] = up.json()["upload_url"]

@@ -18,6 +18,7 @@ from app.providers.stt.base import (
     STTError,
     TranscriptResult,
     Word,
+    audio_content_type,
     env_timeout,
     finalize,
     primary_language,
@@ -33,6 +34,7 @@ class ElevenLabsProvider:
     """ElevenLabs Scribe adapter."""
 
     name = "elevenlabs"
+    prefers_compact_audio = True  # Ogg/Opus upload: ~8x smaller than the WAV
 
     def __init__(self, api_key: str, *, model_id: str | None = None) -> None:
         if not api_key:
@@ -62,7 +64,7 @@ class ElevenLabsProvider:
                         API_URL,
                         headers={"xi-api-key": self.api_key},
                         data=data,
-                        files={"file": (audio_path.name, fh, "audio/wav")},
+                        files={"file": (audio_path.name, fh, audio_content_type(audio_path))},
                     )
         except httpx.HTTPError as exc:
             raise STTError(f"ElevenLabs request failed: {exc}") from exc

@@ -24,3 +24,4 @@ openai>=3.0
 aiogram>=3.13
 # Integrator (e2e smoke, backend/tests/e2e)
 playwright==1.56.0
+numpy>=2.0

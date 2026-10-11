@@ -27,6 +27,15 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${total} с`;
 }
 
+/** Elapsed processing time: «48 с», «2 мин 05 с». */
+export function formatElapsed(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return "—";
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m > 0 ? `${m} мин ${String(s).padStart(2, "0")} с` : `${s} с`;
+}
+
 const dateTimeFmt = new Intl.DateTimeFormat("ru-RU", {
   day: "2-digit",
   month: "2-digit",

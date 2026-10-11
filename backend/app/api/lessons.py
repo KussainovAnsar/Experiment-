@@ -124,6 +124,7 @@ def row_to_lesson_dto(row: Any) -> LessonOut:
         consent_confirmed=lesson.consent_confirmed,
         created_at=lesson.created_at,
         processed_at=lesson.processed_at,
+        processing_stats=lesson.processing_stats,
     )
 
 

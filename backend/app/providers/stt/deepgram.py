@@ -21,6 +21,8 @@ from app.providers.stt.base import (
     STTError,
     TranscriptResult,
     Word,
+    aiter_file,
+    audio_content_type,
     env_timeout,
     finalize,
     primary_language,
@@ -36,6 +38,7 @@ class DeepgramProvider:
     """Deepgram REST adapter."""
 
     name = "deepgram"
+    prefers_compact_audio = True  # Ogg/Opus upload: ~8x smaller than the WAV
 
     def __init__(self, api_key: str, *, model: str | None = None) -> None:
         if not api_key:
@@ -60,15 +63,16 @@ class DeepgramProvider:
         return params
 
     async def transcribe(self, audio_path: Path, *, language_hints: list[str]) -> TranscriptResult:
-        """Upload the wav and map utterances to segments."""
+        """Upload the audio (compact Ogg/Opus when the pipeline has it) and map utterances to segments."""
         audio_path = Path(audio_path)
         if not audio_path.is_file():
             raise STTError(f"audio file not found: {audio_path}")
-        headers = {"Authorization": f"Token {self.api_key}", "Content-Type": "audio/wav"}
+        headers = {"Authorization": f"Token {self.api_key}", "Content-Type": audio_content_type(audio_path)}
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                with audio_path.open("rb") as fh:
-                    resp = await client.post(API_URL, params=self._params(language_hints), headers=headers, content=fh)
+                resp = await client.post(
+                    API_URL, params=self._params(language_hints), headers=headers, content=aiter_file(audio_path)
+                )
         except httpx.HTTPError as exc:
             raise STTError(f"Deepgram request failed: {exc}") from exc
         if resp.status_code >= 400:

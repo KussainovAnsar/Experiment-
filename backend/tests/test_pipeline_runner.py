@@ -487,3 +487,128 @@ async def test_shutdown_cancels_inline_task_and_marks_lesson_failed(
         fresh = await session.get(Lesson, lesson.id)
         assert fresh is not None and fresh.status == LessonStatus.failed
         assert fresh.status_message == runner.CANCELLED_MESSAGE
+
+
+# ---------------------------------------------------------------- parallel branches, heartbeat, stats
+
+
+class _SlowSTT:
+    """Mock STT that takes a while and looks at the DB while it 'works'."""
+
+    name = "slow-mock"
+    prefers_compact_audio = True
+
+    def __init__(self, sm: async_sessionmaker[AsyncSession], lesson_id: uuid.UUID, *, fail: bool = False) -> None:
+        self.sm, self.lesson_id, self.fail = sm, lesson_id, fail
+        self.seen: dict = {}
+
+    async def transcribe(self, audio_path: Path, *, language_hints: list[str]):  # noqa: ANN201
+        from app.providers.stt.base import Segment, TranscriptResult
+
+        self.seen["file"] = Path(audio_path).name
+        await asyncio.sleep(2.5)
+        async with self.sm() as session:
+            frames = (await session.execute(select(Frame).where(Frame.lesson_id == self.lesson_id))).scalars().all()
+            lesson = await session.get(Lesson, self.lesson_id)
+            self.seen["frames_before_stt_end"] = len(frames)
+            self.seen["status"] = lesson.status if lesson else None
+            self.seen["status_message"] = lesson.status_message if lesson else None
+        if self.fail:
+            raise RuntimeError("stt exploded")
+        seg = Segment(start=0.0, end=2.0, speaker="teacher", text="Здравствуйте, начнём урок.", confidence=0.9)
+        return TranscriptResult(provider=self.name, language="ru", segments=[seg], speaker_map={"S0": "teacher"})
+
+
+async def test_frames_extracted_while_speech_is_recognised(
+    sm: async_sessionmaker[AsyncSession],
+    center: Center,
+    media_file: Path,
+    stub_hooks: dict[str, list],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lesson = await _make_lesson(sm, center, media_file)
+    stt = _SlowSTT(sm, lesson.id)
+    monkeypatch.setattr(runner, "get_stt_provider", lambda settings: stt)
+    monkeypatch.setenv("PIPELINE_HEARTBEAT_SEC", "1")
+    await run_lesson_pipeline(lesson.id, sessionmaker=sm)
+
+    # keyframes were already saved while the (slow) recognition was still running
+    assert stt.seen["frames_before_stt_end"] >= 1
+    # the AAC track of the recording was copied (no re-encoding) for the provider that asked for compact audio
+    assert stt.seen["file"] == "audio.m4a"
+    # heartbeat: the status message shows elapsed time of the long stage
+    assert stt.seen["status"] == LessonStatus.transcribing
+    assert "Распознаём речь" in stt.seen["status_message"] and " с" in stt.seen["status_message"]
+    async with sm() as session:
+        fresh = await session.get(Lesson, lesson.id)
+        assert fresh is not None and fresh.status == LessonStatus.done, (fresh.status_message, fresh.error)
+        stats = fresh.processing_stats
+        assert stats and stats["total_sec"] > 0 and stats["media_duration_sec"] == pytest.approx(12.0, abs=0.3)
+        assert {"probing", "extracting_audio", "transcribing", "extracting_frames", "analyzing"} <= set(
+            stats["stages_ms"]
+        )
+        # frames ran concurrently: wall clock is well below the sum of the stages
+        assert stats["total_sec"] * 1000 < sum(stats["stages_ms"].values())
+
+
+async def test_stt_failure_with_parallel_frames_marks_failed(
+    sm: async_sessionmaker[AsyncSession],
+    center: Center,
+    media_file: Path,
+    stub_hooks: dict[str, list],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lesson = await _make_lesson(sm, center, media_file)
+    monkeypatch.setattr(runner, "get_stt_provider", lambda settings: _SlowSTT(sm, lesson.id, fail=True))
+    await run_lesson_pipeline(lesson.id, sessionmaker=sm)
+    async with sm() as session:
+        fresh = await session.get(Lesson, lesson.id)
+        assert fresh is not None and fresh.status == LessonStatus.failed
+        assert fresh.error and fresh.error.startswith("[transcribing]")
+        assert fresh.processing_stats and "transcribing" not in fresh.processing_stats["stages_ms"]
+    assert stub_hooks["analyze"] == []
+
+
+async def test_worker_processes_lessons_concurrently(
+    sm: async_sessionmaker[AsyncSession],
+    center: Center,
+    media_file: Path,
+    stub_hooks: dict[str, list],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.pipeline import jobs
+    from app.worker import run_worker
+
+    async with sm() as session:  # an isolated queue: only this test's jobs
+        await session.execute(delete(Job))
+        await session.commit()
+    lessons = [await _make_lesson(sm, center, media_file) for _ in range(2)]
+    monkeypatch.setattr(runner, "get_stt_provider", lambda settings: _SlowSTT(sm, uuid.uuid4()))
+    async with sm() as session:
+        for lesson in lessons:
+            await jobs.enqueue(session, jobs.KIND_PROCESS_LESSON, {"lesson_id": str(lesson.id)})
+        await session.commit()
+
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    async def stop_when_done() -> None:
+        while True:
+            async with sm() as session:
+                statuses = [(await session.get(Lesson, lesson.id)).status for lesson in lessons]
+            if all(s in (LessonStatus.done, LessonStatus.failed) for s in statuses):
+                stop.set()
+                return
+            await asyncio.sleep(0.2)
+
+    watcher = asyncio.create_task(stop_when_done())
+    await asyncio.wait_for(run_worker(poll_interval=0.2, stop_event=stop, sessionmaker=sm, concurrency=2), 60)
+    await watcher
+    elapsed = loop.time() - started
+    async with sm() as session:
+        for lesson in lessons:
+            fresh = await session.get(Lesson, lesson.id)
+            assert fresh.status == LessonStatus.done, (fresh.status_message, fresh.error)
+    # each lesson spends 2.5 s in (mock) speech recognition; sequential processing would take > 5 s
+    assert elapsed < 5.0, elapsed

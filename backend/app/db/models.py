@@ -255,6 +255,8 @@ class Lesson(TimestampMixin, Base):
     language_hints: Mapped[list[str]] = mapped_column(ARRAY(String(8)), default=lambda: ["ru", "kk"], nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # {"total_sec", "stages_ms": {stage: ms}, "media_duration_sec", "speed_x", "stt_provider", ...}
+    processing_stats: Mapped[dict | None] = mapped_column(JSONB)
 
     teacher: Mapped[Teacher] = relationship(back_populates="lessons")
     student: Mapped[Student] = relationship(back_populates="lessons")
