@@ -142,6 +142,7 @@ def test_registry_mock_and_unknown() -> None:
     with pytest.raises(ProviderNotConfigured):
         get_stt_provider(settings.model_copy(update={"stt_provider": "nope"}))
     expected = {"mock", "whisper_local", "openai", "deepgram", "assemblyai", "google", "elevenlabs", "yandex"}
+    expected.add("revolver")
     assert set(PROVIDERS) == expected
 
 

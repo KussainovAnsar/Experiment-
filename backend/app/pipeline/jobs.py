@@ -102,13 +102,18 @@ async def complete(session: AsyncSession, job: Job) -> None:
     log.info("job_done", job_id=str(job.id), kind=job.kind, attempts=job.attempts)
 
 
-async def fail(session: AsyncSession, job: Job, error: str, *, retry: bool = True) -> None:
-    """Record the error; re-queue with backoff while attempts remain (and ``retry``), else mark ``failed``."""
+async def fail(
+    session: AsyncSession, job: Job, error: str, *, retry: bool = True, delay_sec: float | None = None
+) -> None:
+    """Record the error; re-queue with backoff while attempts remain (and ``retry``), else mark ``failed``.
+
+    ``delay_sec`` overrides the exponential backoff (free-tier limits exhausted: retry when they cool down).
+    """
     job.error = (error or "")[:_ERROR_MAX_CHARS]
     job.locked_at = None
     job.locked_by = None
     if retry and job.attempts < job.max_attempts:
-        delay = backoff_seconds(job.attempts)
+        delay = int(min(delay_sec, BACKOFF_MAX_SEC)) if delay_sec else backoff_seconds(job.attempts)
         job.status = JobStatus.queued
         job.run_after = datetime.now(UTC) + timedelta(seconds=delay)
         log.warning("job_retry_scheduled", job_id=str(job.id), kind=job.kind, attempt=job.attempts, delay_sec=delay)

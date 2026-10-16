@@ -88,6 +88,8 @@ class PipelineResult:
     status: LessonStatus | None
     error_type: str | None = None
     retryable: bool = False
+    # Free-tier revolver ran out of quota: re-run no earlier than this (the worker overrides its backoff).
+    retry_after_sec: float | None = None
 
 # Human-readable (Russian) progress messages per stage.
 STAGE_MESSAGES: dict[LessonStatus, str] = {
@@ -316,7 +318,7 @@ async def run_lesson_pipeline_detailed(
             )
         except Exception:  # pragma: no cover - last resort, DB unavailable
             log.exception("pipeline_mark_failed_error")
-        return PipelineResult(LessonStatus.failed, error_type, is_retryable(exc))
+        return PipelineResult(LessonStatus.failed, error_type, is_retryable(exc), _retry_after_sec(exc))
     finally:
         structlog.contextvars.unbind_contextvars("lesson_id")
 
@@ -326,6 +328,12 @@ class _Cancelled(RuntimeError):
 
     def __str__(self) -> str:
         return "processing task cancelled on server shutdown"
+
+
+def _retry_after_sec(exc: BaseException) -> float | None:
+    """``retry_after_sec`` of a revolver ``FreeLimitsExhausted`` (LLM or STT), else ``None``."""
+    value = getattr(exc, "retry_after_sec", None)
+    return float(value) if isinstance(value, int | float) and value > 0 else None
 
 
 def is_retryable(exc: BaseException) -> bool:
@@ -458,6 +466,8 @@ def _failure_message(stage: LessonStatus, exc: BaseException) -> str:
     stage_ru = STAGE_MESSAGES.get(stage, stage.value).lower()
     if isinstance(exc, _Cancelled):
         return CANCELLED_MESSAGE
+    if _retry_after_sec(exc) is not None:  # free-tier revolver: limits exhausted, the message says so
+        return redact_paths(str(exc))
     if isinstance(exc, ProviderNotConfigured):
         return f"Провайдер распознавания речи не настроен: {exc}"
     if isinstance(exc, STTError):

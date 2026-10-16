@@ -41,6 +41,23 @@ class ProviderNotConfigured(STTError):
     """The selected provider lacks credentials or an optional dependency; the message says how to fix it."""
 
 
+class STTHTTPError(STTError):
+    """An HTTP-level failure with the status code and the server's ``Retry-After`` (seconds) if any."""
+
+    def __init__(self, message: str, *, status_code: int | None = None, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+
+class FreeLimitsExhausted(STTError):
+    """Every free STT endpoint of the revolver is cooling down or failed (see ``retry_after_sec``)."""
+
+    def __init__(self, message: str, *, retry_after_sec: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_sec = retry_after_sec
+
+
 @dataclass(slots=True)
 class Segment:
     """One timed utterance of the transcript."""

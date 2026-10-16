@@ -59,6 +59,20 @@ class Settings(BaseSettings):
     llm_model: str = "claude-sonnet-5-5"
     llm_max_frames: int = 20
 
+    # free-tier revolver (LLM_PROVIDER=revolver / STT_PROVIDER=revolver); empty order = built-in default
+    groq_api_key: str = ""
+    gemini_api_key: str = ""
+    openrouter_api_key: str = ""
+    mistral_api_key: str = ""
+    nvidia_api_key: str = ""
+    cerebras_api_key: str = ""
+    sambanova_api_key: str = ""
+    revolver_llm_order: str = ""
+    revolver_stt_order: str = ""
+    revolver_cooldown_sec: float = 600.0
+    revolver_llm_timeout_sec: float = 300.0
+    revolver_image_max_px: int = 1024
+
     # messaging
     telegram_bot_token: str = ""
     telegram_mode: Literal["polling", "webhook"] = "polling"

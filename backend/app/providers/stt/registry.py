@@ -56,6 +56,12 @@ def _yandex(settings: Settings) -> STTProvider:
     return YandexSpeechKitProvider(api_key=settings.yandex_api_key, folder_id=settings.yandex_folder_id)
 
 
+def _revolver(settings: Settings) -> STTProvider:
+    from app.providers.stt.revolver import RevolverSTTProvider
+
+    return RevolverSTTProvider(settings)
+
+
 PROVIDERS: dict[str, Callable[[Settings], STTProvider]] = {
     "mock": _mock,
     "whisper_local": _whisper_local,
@@ -65,6 +71,7 @@ PROVIDERS: dict[str, Callable[[Settings], STTProvider]] = {
     "google": _google,
     "elevenlabs": _elevenlabs,
     "yandex": _yandex,
+    "revolver": _revolver,
 }
 
 

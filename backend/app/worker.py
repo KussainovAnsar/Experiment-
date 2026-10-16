@@ -43,26 +43,29 @@ def default_worker_id() -> str:
     return os.environ.get("WORKER_ID") or f"{socket.gethostname()}-{os.getpid()}"
 
 
-async def handle_job(job: Job, *, sessionmaker: async_sessionmaker) -> tuple[bool, str | None, bool]:
-    """Execute one claimed job. Returns ``(ok, error, retryable)``."""
+async def handle_job(
+    job: Job, *, sessionmaker: async_sessionmaker
+) -> tuple[bool, str | None, bool, float | None]:
+    """Execute one claimed job. Returns ``(ok, error, retryable, retry_after_sec)``."""
     if job.kind == jobs.KIND_PROCESS_LESSON:
         raw = (job.payload or {}).get("lesson_id")
         try:
             lesson_id = uuid.UUID(str(raw))
         except (ValueError, TypeError):
-            return False, f"invalid lesson_id in payload: {raw!r}", False
+            return False, f"invalid lesson_id in payload: {raw!r}", False, None
         result = await run_lesson_pipeline_detailed(lesson_id, sessionmaker=sessionmaker)
         if result.status is None:
             log.info("job_skipped_lesson_busy", job_id=str(job.id), lesson_id=str(lesson_id))
-            return True, None, False  # another run owns the lesson: nothing to do, nothing to retry
+            return True, None, False, None  # another run owns the lesson: nothing to do, nothing to retry
         if result.status == LessonStatus.done:
-            return True, None, False
+            return True, None, False, None
         return (
             False,
             f"lesson {lesson_id} ended with status {result.status.value} ({result.error_type})",
             result.retryable,
+            result.retry_after_sec,
         )
-    return False, f"unknown job kind: {job.kind}", False
+    return False, f"unknown job kind: {job.kind}", False, None
 
 
 async def run_once(*, worker_id: str, sessionmaker: async_sessionmaker | None = None) -> bool:
@@ -73,14 +76,14 @@ async def run_once(*, worker_id: str, sessionmaker: async_sessionmaker | None = 
         if job is None:
             return False
         try:
-            ok, error, retryable = await handle_job(job, sessionmaker=sm)
+            ok, error, retryable, retry_after = await handle_job(job, sessionmaker=sm)
         except Exception as exc:  # the pipeline never raises, but guard the loop anyway
             log.exception("job_crashed", job_id=str(job.id))
-            ok, error, retryable = False, f"{type(exc).__name__}: {exc}", True
+            ok, error, retryable, retry_after = False, f"{type(exc).__name__}: {exc}", True, None
         if ok:
             await jobs.complete(session, job)
         else:
-            await jobs.fail(session, job, error or "unknown error", retry=retryable)
+            await jobs.fail(session, job, error or "unknown error", retry=retryable, delay_sec=retry_after)
         return True
 
 

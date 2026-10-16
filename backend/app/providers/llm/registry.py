@@ -26,10 +26,17 @@ def _openai(settings: Settings) -> LLMProvider:
     return OpenAILLMProvider(api_key=settings.openai_api_key, model=resolve_model(settings.llm_model))
 
 
+def _revolver(settings: Settings) -> LLMProvider:
+    from app.providers.llm.revolver import RevolverLLMProvider
+
+    return RevolverLLMProvider(settings)
+
+
 PROVIDERS: dict[str, Callable[[Settings], LLMProvider]] = {
     "mock": _mock,
     "anthropic": _anthropic,
     "openai": _openai,
+    "revolver": _revolver,
 }
 
 

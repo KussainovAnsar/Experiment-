@@ -131,3 +131,17 @@ async def test_release_stale(sm: async_sessionmaker[AsyncSession], kind: str) ->
         again = await jobs.claim_next(session, "alive", kinds=[kind])
         assert again is not None and again.id == claimed.id and again.attempts == 2
         await jobs.complete(session, again)
+
+
+async def test_fail_with_delay_overrides_backoff(sm: async_sessionmaker[AsyncSession], kind: str) -> None:
+    """Free-tier limits exhausted: the job comes back when the revolver's first endpoint cools down."""
+    async with sm() as session:
+        await jobs.enqueue(session, kind, {"lesson_id": "x"}, max_attempts=3)
+        await session.commit()
+    async with sm() as session:
+        claimed = await jobs.claim_next(session, "w", kinds=[kind])
+        assert claimed is not None
+        before = datetime.now(UTC)
+        await jobs.fail(session, claimed, "free limits exhausted", delay_sec=900)
+        assert claimed.status == JobStatus.queued
+        assert claimed.run_after >= before + timedelta(seconds=899)

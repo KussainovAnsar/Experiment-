@@ -10,6 +10,7 @@ once with the pydantic error text when the first answer does not validate.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import re
 from dataclasses import dataclass, field
@@ -39,6 +40,25 @@ class LLMError(RuntimeError):
 
 class ProviderNotConfigured(LLMError):
     """The selected provider lacks credentials or an optional dependency; the message says how to fix it."""
+
+
+class LLMHTTPError(LLMError):
+    """An HTTP-level failure with the status code (``None`` for timeouts / connection errors) and the
+    server's ``Retry-After`` in seconds when it sent one. Used by the revolver to pick a cooldown."""
+
+    def __init__(self, message: str, *, status_code: int | None = None, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+
+class FreeLimitsExhausted(LLMError):
+    """Every free endpoint of the revolver is cooling down or failed; ``retry_after_sec`` is when the first one
+    becomes available again (the worker re-queues the lesson for then)."""
+
+    def __init__(self, message: str, *, retry_after_sec: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_sec = retry_after_sec
 
 
 @dataclass(slots=True)
@@ -80,10 +100,24 @@ def media_type_for(path: Path) -> str:
     return _MEDIA_TYPES.get(path.suffix.lower(), "image/jpeg")
 
 
-def encode_image_base64(path: Path) -> tuple[str, str]:
-    """Read an image and return ``(media_type, base64_without_newlines)``."""
-    data = Path(path).read_bytes()
-    return media_type_for(Path(path)), base64.standard_b64encode(data).decode("ascii")
+def encode_image_base64(path: Path, *, max_px: int | None = None) -> tuple[str, str]:
+    """Read an image and return ``(media_type, base64_without_newlines)``.
+
+    With ``max_px`` the image is downscaled (longest side ≤ ``max_px``) and re-encoded as JPEG — free API tiers
+    cap request size and count image tokens by resolution. Smaller images are sent as is.
+    """
+    path = Path(path)
+    if max_px and max_px > 0:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            if max(im.size) > max_px:
+                im = im.convert("RGB")
+                im.thumbnail((max_px, max_px))
+                buf = io.BytesIO()
+                im.save(buf, format="JPEG", quality=82)
+                return "image/jpeg", base64.standard_b64encode(buf.getvalue()).decode("ascii")
+    return media_type_for(path), base64.standard_b64encode(path.read_bytes()).decode("ascii")
 
 
 def extract_json(text: str) -> dict:

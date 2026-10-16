@@ -18,11 +18,13 @@ from pathlib import Path
 import httpx
 
 from app.logging import get_logger
+from app.providers.revolver import best_retry_after
 from app.providers.stt.base import (
     SPEAKER_UNKNOWN,
     ProviderNotConfigured,
     Segment,
     STTError,
+    STTHTTPError,
     TranscriptResult,
     env_timeout,
     finalize,
@@ -44,16 +46,30 @@ class OpenAISTTProvider:
 
     name = "openai"
 
-    def __init__(self, api_key: str, *, model: str | None = None, ffmpeg_bin: str = "ffmpeg") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        model: str | None = None,
+        ffmpeg_bin: str = "ffmpeg",
+        api_url: str = API_URL,
+        name: str | None = None,
+        label: str = "OpenAI",
+    ) -> None:
+        """``api_url``/``name``/``label`` reuse the adapter for OpenAI-compatible endpoints (Groq Whisper)."""
         if not api_key:
-            raise ProviderNotConfigured("STT_PROVIDER=openai requires OPENAI_API_KEY")
+            raise ProviderNotConfigured(f"STT_PROVIDER={name or self.name} requires an API key (OPENAI_API_KEY)")
         self.api_key = api_key
+        self.api_url = api_url
+        self.label = label
+        if name:
+            self.name = name
         self.model = model or os.environ.get("OPENAI_STT_MODEL", "whisper-1")
         self.ffmpeg_bin = ffmpeg_bin
         self.timeout = env_timeout("STT_HTTP_TIMEOUT_SEC", 600.0)
 
     def _response_format(self) -> str:
-        if self.model == "whisper-1":
+        if self.model == "whisper-1" or self.model.startswith("whisper-large"):
             return "verbose_json"
         if self.model.endswith("-diarize"):
             return "diarized_json"
@@ -69,13 +85,17 @@ class OpenAISTTProvider:
             data["chunking_strategy"] = "auto"
         with path.open("rb") as fh:
             resp = await client.post(
-                API_URL,
+                self.api_url,
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 data=data,
                 files={"file": (path.name, fh, "audio/mpeg")},
             )
         if resp.status_code >= 400:
-            raise STTError(f"OpenAI STT HTTP {resp.status_code}: {resp.text[:500]}")
+            raise STTHTTPError(
+                f"{self.label} STT HTTP {resp.status_code}: {resp.text[:500]}",
+                status_code=resp.status_code,
+                retry_after=best_retry_after(resp.headers, resp.text),
+            )
         body = resp.json()
         detected = body.get("language")
         segments: list[Segment] = []
@@ -126,11 +146,13 @@ class OpenAISTTProvider:
                     all_labels += labs
                     detected = detected or lang
         except httpx.HTTPError as exc:
-            raise STTError(f"OpenAI STT request failed: {exc}") from exc
+            raise STTHTTPError(f"{self.label} STT request failed: {exc}") from exc
         finally:
             for _, p in chunks:
                 p.unlink(missing_ok=True)
-        log.info("openai_stt_done", model=self.model, chunks=len(chunks), segments=len(all_segments))
+        log.info(
+            "openai_stt_done", provider=self.name, model=self.model, chunks=len(chunks), segments=len(all_segments)
+        )
         return finalize(self.name, detected or language, all_segments, all_labels)
 
 
