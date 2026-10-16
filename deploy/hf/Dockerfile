@@ -16,7 +16,7 @@ COPY --chown=user . .
 COPY --from=web --chown=user /web/dist /app/frontend/dist
 RUN chmod +x deploy/hf/start.sh
 USER user
-ENV PYTHONUNBUFFERED=1 MEDIA_ROOT=/tmp/media APP_ENV=dev PIPELINE_MODE=inline \
+ENV PYTHONUNBUFFERED=1 MALLOC_ARENA_MAX=2 KEYFRAME_MAX=15 LLM_MAX_FRAMES=12 MEDIA_ROOT=/tmp/media APP_ENV=dev PIPELINE_MODE=inline \
     DATABASE_URL=postgresql+asyncpg://lessonlens:lessonlens@127.0.0.1:5432/lessonlens \
     DATABASE_URL_SYNC=postgresql+psycopg://lessonlens:lessonlens@127.0.0.1:5432/lessonlens
 EXPOSE 7860
