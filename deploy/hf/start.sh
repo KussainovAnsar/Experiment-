@@ -9,4 +9,4 @@ psql -h 127.0.0.1 -U postgres -q -c "CREATE USER lessonlens PASSWORD 'lessonlens
 cd /app/backend
 alembic upgrade head
 python -m app.seed_demo --reset
-exec uvicorn hf_app:app --app-dir /app/deploy/hf --host 0.0.0.0 --port 7860
+exec uvicorn hf_app:app --app-dir /app/deploy/hf --host 0.0.0.0 --port "${PORT:-7860}"

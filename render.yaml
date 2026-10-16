@@ -1,0 +1,32 @@
+# Render Blueprint: бесплатный Docker web-сервис; Postgres внутри контейнера (демо, данные сбрасываются при перезапуске).
+services:
+  - type: web
+    name: lessonlens
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/hf/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: STT_PROVIDER
+        value: revolver
+      - key: LLM_PROVIDER
+        value: revolver
+      - key: TELEGRAM_MODE
+        value: polling
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
