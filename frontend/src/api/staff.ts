@@ -22,6 +22,7 @@ import type {
   Student,
   StudentCreate,
   StudentProgress,
+  Subject,
   Teacher,
   TeacherCreate,
   TokenResponse,
@@ -33,6 +34,10 @@ export const authApi = {
   registerCenter: (body: RegisterCenterRequest) =>
     http.post<TokenResponse>("/api/auth/register-center", body, { silent401: true }),
   me: () => http.get<StaffUser>("/api/auth/me"),
+};
+
+export const referenceApi = {
+  subjects: () => http.get<Subject[]>("/api/subjects"),
 };
 
 export const centerApi = {
@@ -83,7 +88,7 @@ export const lessonsApi = {
     form.append("student_id", fields.student_id);
     if (fields.teacher_id) form.append("teacher_id", fields.teacher_id);
     if (fields.scheduled_at) form.append("scheduled_at", fields.scheduled_at);
-    form.append("subject", fields.subject ?? "russian");
+    if (fields.subject) form.append("subject", fields.subject); // absent → backend default subject
     form.append("consent_confirmed", fields.consent_confirmed ? "true" : "false");
     form.append("language_hints", fields.language_hints.join(","));
     return uploadWithProgress<Lesson>("/api/lessons", form, onProgress, { signal });

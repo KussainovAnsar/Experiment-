@@ -404,6 +404,11 @@ class ParentLessonReportOut(BaseModel):
 # ---------------------------------------------------------------- misc
 
 
+class SubjectOut(BaseModel):
+    code: str
+    title: str
+
+
 class HealthOut(BaseModel):
     status: Literal["ok", "degraded"]
     database: Literal["ok", "error"]

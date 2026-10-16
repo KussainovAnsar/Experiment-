@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, centers, health, lessons, media, parent, people, progress, reports
+from app.api import auth, centers, health, lessons, media, parent, people, progress, reports, subjects
 from app.config import get_settings
 from app.logging import configure_logging, get_logger
 from app.startup_checks import check_secret_key
@@ -150,6 +150,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(subjects.router)
     app.include_router(auth.router)
     app.include_router(centers.router)
     app.include_router(people.router)

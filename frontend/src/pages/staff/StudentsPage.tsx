@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { errorMessage } from "@/api/client";
-import { keys, useStudents } from "@/api/queries";
+import { keys, subjectTitle, useStudents, useSubjects } from "@/api/queries";
 import { studentsApi } from "@/api/staff";
 import { useStaffAuth } from "@/auth/StaffAuth";
 import { EmptyState, ErrorState, Modal, PageHeader, Skeleton } from "@/components/ui";
@@ -12,9 +12,10 @@ import type { Language } from "@/types/api";
 export function StudentsPage() {
   const { canManagePeople } = useStaffAuth();
   const q = useStudents();
+  const subjects = useSubjects();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ full_name: "", grade: "", school: "", native_language: "kk" as Language });
+  const [form, setForm] = useState({ full_name: "", grade: "", school: "", native_language: "kk" as Language, target_subject: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -28,10 +29,11 @@ export function StudentsPage() {
         grade: form.grade ? Number(form.grade) : null,
         school: form.school.trim() || null,
         native_language: form.native_language,
+        target_subject: form.target_subject || undefined, // empty → backend default subject
       });
       await qc.invalidateQueries({ queryKey: keys.students });
       setOpen(false);
-      setForm({ full_name: "", grade: "", school: "", native_language: "kk" });
+      setForm({ full_name: "", grade: "", school: "", native_language: "kk", target_subject: "" });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -67,6 +69,7 @@ export function StudentsPage() {
                   <th>Класс</th>
                   <th>Школа</th>
                   <th>Родной язык</th>
+                  <th>Предмет</th>
                   <th />
                 </tr>
               </thead>
@@ -79,6 +82,7 @@ export function StudentsPage() {
                     <td>{s.grade ?? "—"}</td>
                     <td>{s.school ?? "—"}</td>
                     <td>{LANGUAGE_LABELS[s.native_language] ?? s.native_language}</td>
+                    <td>{subjectTitle(subjects.data, s.target_subject)}</td>
                     <td className="nowrap">
                       <Link to={`/students/${s.id}`} className="btn btn-sm">
                         Прогресс
@@ -111,6 +115,17 @@ export function StudentsPage() {
                   <option value="ru">Русский</option>
                 </select>
               </div>
+            </div>
+            <div className="field">
+              <label htmlFor="s-subject">Основной предмет</label>
+              <select id="s-subject" className="select" value={form.target_subject} onChange={(e) => setForm({ ...form, target_subject: e.target.value })}>
+                {subjects.data?.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">Подставляется по умолчанию при загрузке урока.</span>
             </div>
             <div className="field">
               <label htmlFor="s-school">Школа</label>

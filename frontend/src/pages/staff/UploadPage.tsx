@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type DragEvent, type FormEvent } from "r
 import { Link, useNavigate } from "react-router-dom";
 import { errorMessage, type UploadProgress } from "@/api/client";
 import { lessonsApi } from "@/api/staff";
-import { useStudents, useTeachers } from "@/api/queries";
+import { useStudents, useSubjects, useTeachers } from "@/api/queries";
 import { useStaffAuth } from "@/auth/StaffAuth";
 import { PageHeader, ProgressBar } from "@/components/ui";
 import { datetimeLocalToIso, formatBytes, toDatetimeLocalValue } from "@/lib/format";
@@ -20,10 +20,12 @@ export function UploadPage() {
   const { user, isTeacher } = useStaffAuth();
   const students = useStudents();
   const teachers = useTeachers();
+  const subjects = useSubjects();
 
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [studentId, setStudentId] = useState("");
+  const [subject, setSubject] = useState("");
   const [teacherId, setTeacherId] = useState(isTeacher && user?.teacher_id ? user.teacher_id : "");
   const [scheduledAt, setScheduledAt] = useState(() => toDatetimeLocalValue(new Date()));
   const [hints, setHints] = useState<{ ru: boolean; kk: boolean }>({ ru: true, kk: true });
@@ -62,6 +64,10 @@ export function UploadPage() {
       setError("Выберите ученика.");
       return;
     }
+    if (!subject) {
+      setError("Выберите предмет урока.");
+      return;
+    }
     if (!teacherId) {
       setError("Выберите преподавателя.");
       return;
@@ -85,7 +91,7 @@ export function UploadPage() {
           student_id: studentId,
           teacher_id: teacherId || undefined,
           scheduled_at: datetimeLocalToIso(scheduledAt) ?? undefined,
-          subject: "russian",
+          subject,
           consent_confirmed: true,
           language_hints: languageHints,
         },
@@ -103,6 +109,15 @@ export function UploadPage() {
   };
 
   const noStudents = students.data && students.data.items.length === 0;
+
+  // The lesson subject defaults to the student's target subject; staff can change it per lesson.
+  const pickStudent = (id: string) => {
+    setStudentId(id);
+    const target = students.data?.items.find((s) => s.id === id)?.target_subject;
+    if (target) setSubject(target);
+  };
+  const subjectOptions = subjects.data ?? [];
+  const subjectKnown = subjectOptions.some((s) => s.code === subject);
 
   return (
     <>
@@ -148,7 +163,7 @@ export function UploadPage() {
           <div className="form-row">
             <div className="field">
               <label htmlFor="student">Ученик</label>
-              <select id="student" className="select" required value={studentId} onChange={(e) => setStudentId(e.target.value)}>
+              <select id="student" className="select" required value={studentId} onChange={(e) => pickStudent(e.target.value)}>
                 <option value="">— выберите ученика —</option>
                 {students.data?.items.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -181,6 +196,19 @@ export function UploadPage() {
                 ))}
               </select>
               {isTeacher && <span className="field-hint">Урок будет привязан к вам.</span>}
+            </div>
+            <div className="field">
+              <label htmlFor="subject">Предмет</label>
+              <select id="subject" className="select" required value={subject} onChange={(e) => setSubject(e.target.value)}>
+                <option value="">— выберите предмет —</option>
+                {subjectOptions.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.title}
+                  </option>
+                ))}
+                {subject && !subjectKnown && <option value={subject}>{subject}</option>}
+              </select>
+              <span className="field-hint">По предмету выбираются правила анализа урока.</span>
             </div>
             <div className="field">
               <label htmlFor="scheduled_at">Дата и время урока</label>
@@ -232,7 +260,7 @@ export function UploadPage() {
         )}
 
         <div className="row">
-          <button type="submit" className="btn btn-primary" disabled={busy || !file || !consent || !studentId || !teacherId}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !file || !consent || !studentId || !teacherId || !subject}>
             {busy ? "Загружаем…" : "Загрузить и начать обработку"}
           </button>
           {busy && (

@@ -1,9 +1,9 @@
 /** React Query hooks and query keys. Lessons in progress auto-refetch every 3 s. */
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from "@tanstack/react-query";
 import { isLessonActive } from "@/lib/status";
-import type { Lesson, Page, ReportKind } from "@/types/api";
+import type { Lesson, Page, ReportKind, Subject } from "@/types/api";
 import { parentApi } from "./parent";
-import { centerApi, lessonsApi, parentsApi, studentsApi, teachersApi, type LessonListParams } from "./staff";
+import { centerApi, lessonsApi, parentsApi, referenceApi, studentsApi, teachersApi, type LessonListParams } from "./staff";
 
 export const LESSON_POLL_MS = 3000;
 /** Media tokens live ~10 minutes (MEDIA_TOKEN_TTL_MINUTES); refresh them a bit earlier while the page is open. */
@@ -20,6 +20,7 @@ export const keys = {
   reports: (id: string) => ["lesson", id, "reports"] as const,
   mediaToken: (id: string) => ["lesson", id, "media-token"] as const,
   report: (id: string, kind: ReportKind) => ["lesson", id, "report", kind] as const,
+  subjects: ["reference", "subjects"] as const,
   teachers: ["teachers"] as const,
   students: ["students"] as const,
   student: (id: string) => ["student", id] as const,
@@ -94,6 +95,16 @@ export function useLessonMediaToken(id: string, enabled: boolean) {
     refetchInterval: MEDIA_TOKEN_REFRESH_MS,
     refetchIntervalInBackground: true,
   });
+}
+
+/** Subject codes and titles; static reference data, fetched once per session. */
+export function useSubjects() {
+  return useQuery({ queryKey: keys.subjects, queryFn: referenceApi.subjects, staleTime: Infinity, gcTime: Infinity });
+}
+
+/** Title for a subject code; unknown codes (or the list not loaded yet) fall back to the code itself. */
+export function subjectTitle(subjects: readonly Subject[] | undefined, code: string): string {
+  return subjects?.find((s) => s.code === code)?.title ?? code;
 }
 
 export function useTeachers() {

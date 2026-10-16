@@ -21,10 +21,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.db.models import Analysis, Frame, Lesson, SkillState, Student, Transcript
 from app.logging import get_logger
-from app.pipeline.prompts import PROMPT_VERSION, SYSTEM_PROMPT, PromptSkillState, build_user_prompt, format_timestamp
+from app.pipeline.prompts import (
+    PROMPT_VERSION,
+    PromptSkillState,
+    build_system_prompt,
+    build_user_prompt,
+    format_timestamp,
+)
 from app.providers.llm.base import ImageInput, LLMError, LLMProvider, LLMResult
 from app.providers.llm.registry import get_llm_provider
-from app.schemas.analysis import RUSSIAN_SKILL_KEYS, LessonAnalysis
+from app.schemas.analysis import STARTER_SKILL_KEYS, LessonAnalysis
+from app.subjects import normalize_subject
 
 log = get_logger("app.pipeline.analysis")
 
@@ -99,6 +106,42 @@ def _prior_skill_states(states: list[SkillState]) -> list[PromptSkillState]:
     return out
 
 
+def _state_lesson_ids(state: SkillState) -> set[str]:
+    ids = {str(e.get("lesson_id")) for e in (state.evidence or []) if isinstance(e, dict) and e.get("lesson_id")}
+    if state.last_seen_lesson_id is not None:
+        ids.add(str(state.last_seen_lesson_id))
+    return ids
+
+
+async def states_for_subject(session: AsyncSession, states: list[SkillState], subject: str | None) -> list[SkillState]:
+    """Keep the skill states observed on lessons of ``subject``.
+
+    ``skill_states`` carry no subject column, so the subject is taken from the lessons in the evidence. A state
+    whose lessons can no longer be resolved (deleted) is kept: dropping history silently is worse than showing it.
+    """
+    if not states:
+        return states
+    per_state = {st.id: _state_lesson_ids(st) for st in states}
+    all_ids: set[uuid.UUID] = set()
+    for ids in per_state.values():
+        for raw in ids:
+            try:
+                all_ids.add(uuid.UUID(raw))
+            except ValueError:
+                continue
+    if not all_ids:
+        return states
+    rows = (await session.execute(select(Lesson.id, Lesson.subject).where(Lesson.id.in_(all_ids)))).all()
+    subject_by_lesson = {str(lid): normalize_subject(subj) for lid, subj in rows}
+    want = normalize_subject(subject)
+    kept: list[SkillState] = []
+    for st in states:
+        subjects = {subject_by_lesson[i] for i in per_state[st.id] if i in subject_by_lesson}
+        if not subjects or want in subjects:
+            kept.append(st)
+    return kept
+
+
 def build_prompt(
     lesson: Lesson,
     transcript: Transcript | None,
@@ -109,7 +152,7 @@ def build_prompt(
 ) -> PromptBundle:
     """Assemble system prompt, user text, images and the JSON schema for one lesson."""
     chosen = select_frames(list(frames or []), settings.llm_max_frames)
-    vocabulary = dict(RUSSIAN_SKILL_KEYS)
+    vocabulary = dict(STARTER_SKILL_KEYS.get(normalize_subject(lesson.subject), {}))
     for st in prior_states:  # keep the student's own keys stable even when they are not in the starter list
         vocabulary.setdefault(st.skill_key, st.skill_name)
     native = student.native_language if student is not None else None
@@ -132,7 +175,7 @@ def build_prompt(
     )
     images = [ImageInput(path=Path(f.path), label=frame_label(f)) for f in chosen]
     return PromptBundle(
-        system=SYSTEM_PROMPT,
+        system=build_system_prompt(lesson.subject),
         user_text=user_text,
         images=images,
         json_schema=LessonAnalysis.model_json_schema(),
@@ -193,6 +236,7 @@ async def analyze_lesson(
     prior_states = list(
         (await session.execute(select(SkillState).where(SkillState.student_id == lesson.student_id))).scalars().all()
     )
+    prior_states = await states_for_subject(session, prior_states, lesson.subject)
     bundle = build_prompt(lesson, transcript, frames, student, prior_states, settings)
     provider = provider or get_llm_provider(settings)
 

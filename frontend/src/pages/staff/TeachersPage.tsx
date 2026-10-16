@@ -1,34 +1,39 @@
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { errorMessage } from "@/api/client";
-import { keys, useTeachers } from "@/api/queries";
+import { keys, subjectTitle, useSubjects, useTeachers } from "@/api/queries";
 import { teachersApi } from "@/api/staff";
 import { useToast } from "@/components/Toast";
 import { Badge, EmptyState, ErrorState, Modal, PageHeader, Skeleton } from "@/components/ui";
 
 export function TeachersPage() {
   const q = useTeachers();
+  const subjects = useSubjects();
   const qc = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ full_name: "", email: "", phone: "" });
+  const [form, setForm] = useState({ full_name: "", email: "", phone: "", subjects: [] as string[] });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (subjects.data?.length && form.subjects.length === 0) {
+      setError("Отметьте хотя бы один предмет.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await teachersApi.create({
         full_name: form.full_name.trim(),
-        subjects: ["russian"],
+        subjects: form.subjects.length ? form.subjects : undefined, // list unavailable → backend default
         email: form.email.trim() || null,
         phone: form.phone.trim() || null,
       });
       await qc.invalidateQueries({ queryKey: keys.teachers });
       setOpen(false);
-      setForm({ full_name: "", email: "", phone: "" });
+      setForm({ full_name: "", email: "", phone: "", subjects: [] });
       toast.show("Преподаватель добавлен.", "success");
     } catch (err) {
       setError(errorMessage(err));
@@ -79,7 +84,7 @@ export function TeachersPage() {
                 {q.data.items.map((t) => (
                   <tr key={t.id}>
                     <td>{t.full_name}</td>
-                    <td className="muted">{t.subjects.map((s) => (s === "russian" ? "Русский язык" : s)).join(", ") || "—"}</td>
+                    <td className="muted">{t.subjects.map((s) => subjectTitle(subjects.data, s)).join(", ") || "—"}</td>
                     <td className="muted small">
                       {t.email ?? ""}
                       {t.email && t.phone ? " · " : ""}
@@ -108,6 +113,27 @@ export function TeachersPage() {
             <div className="field">
               <label htmlFor="t-name">Имя и фамилия</label>
               <input id="t-name" className="input" required minLength={2} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+            </div>
+            <div className="field">
+              <span className="field-label">Предметы</span>
+              <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+                {subjects.data?.map((s) => (
+                  <label key={s.code} className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={form.subjects.includes(s.code)}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          subjects: e.target.checked ? [...form.subjects, s.code] : form.subjects.filter((c) => c !== s.code),
+                        })
+                      }
+                    />
+                    {s.title}
+                  </label>
+                ))}
+              </div>
+              {subjects.isError && <span className="field-hint">Не удалось загрузить список предметов.</span>}
             </div>
             <div className="form-row">
               <div className="field">

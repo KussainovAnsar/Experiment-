@@ -34,6 +34,7 @@ from app.schemas.api import AnalysisOut, FrameOut, LessonOut, MediaTokenOut, Pag
 from app.services.audit import audit
 from app.services.auth import create_media_token
 from app.services.storage import lesson_dir, safe_extension, source_path
+from app.subjects import DEFAULT_SUBJECT, normalize_subject
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
 log = get_logger(__name__)
@@ -241,7 +242,7 @@ async def upload_lesson(  # noqa: PLR0913 - multipart form fields
     student_id: Annotated[uuid.UUID, Form()],
     teacher_id: Annotated[uuid.UUID | None, Form()] = None,
     scheduled_at: Annotated[datetime | None, Form()] = None,
-    subject: Annotated[str, Form(max_length=64)] = "russian",
+    subject: Annotated[str, Form(max_length=64)] = DEFAULT_SUBJECT,
     consent_confirmed: Annotated[str | None, Form()] = None,
     language_hints: Annotated[str | None, Form(description="Через запятую, напр. ru,kk")] = None,
 ) -> LessonOut:
@@ -289,7 +290,7 @@ async def upload_lesson(  # noqa: PLR0913 - multipart form fields
         center_id=user.center_id,
         teacher_id=teacher.id,
         student_id=student.id,
-        subject=(subject or "russian").strip() or "russian",
+        subject=normalize_subject(subject),
         scheduled_at=scheduled_at or datetime.now(UTC),
         source_filename=Path(file.filename or f"source{ext}").name[:255],
         media_kind=MediaKind.video if ext in VIDEO_EXTENSIONS else MediaKind.audio,

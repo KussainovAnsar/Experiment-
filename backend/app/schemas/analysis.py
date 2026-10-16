@@ -170,3 +170,7 @@ RUSSIAN_SKILL_KEYS: dict[str, str] = {
     "proiznoshenie": "Произношение (ы/и, мягкие согласные, редукция гласных)",
     "punktuatsiya": "Пунктуация в простом предложении",
 }
+
+# Starter vocabularies by lesson subject code. Subjects without an entry start empty: the LLM creates keys,
+# and the student's own keys for that subject are fed back on later lessons.
+STARTER_SKILL_KEYS: dict[str, dict[str, str]] = {"russian": RUSSIAN_SKILL_KEYS}

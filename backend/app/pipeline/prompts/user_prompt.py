@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.schemas.analysis import RUSSIAN_SKILL_KEYS
+from app.subjects import normalize_subject, subject_title
 
 PROMPT_VERSION = "1.0"
 
@@ -14,12 +15,9 @@ _SPEAKER_LABELS = {"teacher": "УЧИТЕЛЬ", "student": "УЧЕНИК"}
 _UNKNOWN_LABEL = "НЕИЗВЕСТНО"
 _STATUS_RU = {"struggling": "трудности", "developing": "в развитии", "mastered": "освоен"}
 _LANG_RU = {"kk": "казахский", "ru": "русский", "en": "английский"}
-_SUBJECT_RU = {
-    "russian": "Русский язык",
-    "kazakh": "Казахский язык",
-    "english": "Английский язык",
-    "math": "Математика",
-}
+# Subjects where the language of instruction is itself the subject: native vs second language matters.
+_LANGUAGE_SUBJECT_LANG = {"russian": "ru", "kazakh": "kk"}
+_LANG_NAME_RU = {"ru": "русский", "kk": "казахский"}
 
 
 @dataclass(slots=True)
@@ -40,13 +38,6 @@ def format_timestamp(seconds: float | None) -> str:
     h, rem = divmod(total, 3600)
     m, s = divmod(rem, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
-
-
-def subject_title(subject: str | None) -> str:
-    """Russian subject title for a lesson subject code (``russian`` → «Русский язык»)."""
-    if not subject:
-        return "Русский язык"
-    return _SUBJECT_RU.get(subject.lower(), subject)
 
 
 def format_transcript(segments: Iterable[Mapping], *, max_chars: int | None = None) -> str:
@@ -71,8 +62,16 @@ def format_transcript(segments: Iterable[Mapping], *, max_chars: int | None = No
 
 
 def format_skill_vocabulary(vocabulary: Mapping[str, str] | None = None) -> str:
-    """Bullet list ``skill_key — название`` for the prompt."""
-    vocab = vocabulary or RUSSIAN_SKILL_KEYS
+    """Bullet list ``skill_key — название`` for the prompt.
+
+    ``None`` → the Russian starter list (legacy default); an empty mapping → a note that keys are to be created.
+    """
+    vocab = RUSSIAN_SKILL_KEYS if vocabulary is None else vocabulary
+    if not vocab:
+        return (
+            "Стартового словаря для этого предмета нет и истории навыков по нему нет: "
+            "заводи новые skill_key по правилам из системной инструкции."
+        )
     return "\n".join(f"- {key} — {name}" for key, name in vocab.items())
 
 
@@ -122,8 +121,15 @@ def build_user_prompt(
     if duration_sec:
         ctx.append(f"- Длительность записи: {format_timestamp(duration_sec)}")
     ctx.append(f"- Класс ученика: {student_grade if student_grade is not None else 'не указан'}")
-    native = _LANG_RU.get((student_native_language or "kk").lower(), student_native_language or "казахский")
-    ctx.append(f"- Родной язык ученика: {native}; русский — второй язык")
+    native_code = (student_native_language or "kk").lower()
+    native = _LANG_RU.get(native_code, student_native_language or "казахский")
+    taught_lang = _LANGUAGE_SUBJECT_LANG.get(normalize_subject(subject))
+    if taught_lang is None:
+        ctx.append(f"- Родной язык ученика: {native}")
+    elif taught_lang == native_code:
+        ctx.append(f"- Родной язык ученика: {native}; {_LANG_NAME_RU[taught_lang]} — родной язык")
+    else:
+        ctx.append(f"- Родной язык ученика: {native}; {_LANG_NAME_RU[taught_lang]} — второй язык")
     hints = ", ".join(language_hints or ["ru", "kk"])
     ctx.append(f"- Ожидаемые языки речи: {hints}")
     if transcript_language:

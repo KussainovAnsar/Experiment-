@@ -77,6 +77,14 @@ export interface Center {
   created_at: string;
 }
 
+// ---------------------------------------------------------------- reference data
+
+/** Lesson subject from GET /api/subjects (backend `app/subjects.py` is the single source). */
+export interface Subject {
+  code: string;
+  title: string;
+}
+
 // ---------------------------------------------------------------- people
 
 export interface Teacher {
