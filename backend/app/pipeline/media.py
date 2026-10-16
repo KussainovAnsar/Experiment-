@@ -325,8 +325,10 @@ DYNAMIC_PIXEL_SHARE = 0.10  # changing in ≥ 10 % of slide-stable scan pairs �
 MASK_DILATE_PX = 3
 EDIT_SHARE = 0.0005  # ≥ 0.05 % of static pixels changed → content edit (≈ a typed word at 1080p)
 MAX_SCAN_SAMPLES = 3600  # sampled-decode fallback never keeps more scan images than this
-STILL_WORKERS = 4
-SCAN_PARTS = max(1, min(4, os.cpu_count() or 1))
+# MEDIA_WORKERS ограничивает параллельные ffmpeg на слабых хостах (512 МБ): каждый процесс держит декодер в памяти.
+_MEDIA_WORKERS = int(os.environ.get("MEDIA_WORKERS", "4"))
+STILL_WORKERS = max(1, _MEDIA_WORKERS)
+SCAN_PARTS = max(1, min(_MEDIA_WORKERS, os.cpu_count() or 1))
 SCAN_PARALLEL_MIN_SEC = 300.0  # shorter recordings are scanned by a single process
 
 
