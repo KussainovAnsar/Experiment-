@@ -261,7 +261,7 @@ AWS Transcribe: `ru-RU` batch и streaming, `kk-KZ` только batch, диар
 ### 6.1 Как работает
 
 - Эндпоинт включается, только если задан его ключ. Порядок — `REVOLVER_LLM_ORDER` / `REVOLVER_STT_ORDER` (`provider:model[@кадров]`), пусто — встроенный порядок из таблицы ниже.
-- 429, 5xx, таймаут, обрыв соединения, 401/403/404, неразбираемый или дважды невалидный JSON — эндпоинт «остывает» (`Retry-After` или подсказка в теле ответа вроде «try again in 25s», иначе `REVOLVER_COOLDOWN_SEC`, по умолчанию 10 мин), берётся следующий. 400/413/422 (запрос не влезает в лимит именно этой модели) — следующий без остывания. Остывание живёт в памяти процесса API/воркера.
+- 429, 5xx, таймаут, обрыв соединения, 401/403/404, неразбираемый или дважды невалидный JSON — эндпоинт «остывает» (`Retry-After` или подсказка в теле ответа вроде «try again in 25s», иначе `REVOLVER_COOLDOWN_SEC`, по умолчанию 10 мин), берётся следующий. 400/413/422 (запрос не влезает в лимит именно этой модели) — следующий без остывания. Исключения: 404 «модель не найдена / снята» — остывание 24 ч; 503 «модель перегружена» — один повтор той же модели через 5 с, затем короткое остывание 90 с. После ответа модели таймкоды цитат пересчитываются по транскрипту (`app/pipeline/timecodes.py`): слабые модели пишут метку `[02:52]` как `2.52`. Остывание живёт в памяти процесса API/воркера.
 - Кадры: равномерно прореживаются до лимита эндпоинта (`@N`) и ужимаются до `REVOLVER_IMAGE_MAX_PX` (1024). Модели без зрения (`@0`, а также gpt-oss/llama-3.3/deepseek) получают только транскрипт; в анализе в `manager_indicators.lesson_structure_notes` пишется «Кадры урока не учитывались…», в `analyses.model` — `groq:openai/gpt-oss-120b [без кадров]`.
 - Ответивший эндпоинт сохраняется в `analyses.model` (`gemini:gemini-3.8-flash`) и `transcripts.provider` (`groq:whisper-large-v3`), пишется в лог `llm_revolver_answered` / `stt_revolver_answered`.
 - Всё исчерпано — `FreeLimitsExhausted`: «Бесплатные лимиты … исчерпаны, повторите позже (ближайший освободится примерно через N мин)». В `PIPELINE_MODE=worker` задача встаёт на повтор к этому моменту (обычные `max_attempts`); в `inline` урок помечается ошибкой, обработку запускают заново вручную. Повтор начинает пайплайн сначала, включая распознавание.
@@ -271,7 +271,7 @@ AWS Transcribe: `ru-RU` batch и streaming, `kk-KZ` только batch, диар
 
 | Эндпоинт | base_url | Модели в порядке по умолчанию | Кадров | Где взять ключ |
 |---|---|---|---|---|
-| Gemini (AI Studio, free tier) | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-3.8-flash`, `gemini-2.5-flash`, `gemini-3.1-flash-lite` | 16 | https://aistudio.google.com/apikey |
+| Gemini (AI Studio, free tier) | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite` (2.5-flash/2.5-flash-lite сняты: 404 для новых ключей) | 16 | https://aistudio.google.com/apikey |
 | OpenRouter (только `:free`) | `https://openrouter.ai/api/v1` | `google/gemma-4-31b-it:free`, `nvidia/nemotron-3.5-super-vl:free` | 8 | https://openrouter.ai/settings/keys |
 | Mistral (план Experiment) | `https://api.mistral.ai/v1` | `mistral-medium-latest` (Pixtral снят с поддержки в 2025–2026) | 8 | https://console.mistral.ai/api-keys |
 | NVIDIA NIM (build.nvidia.com) | `https://integrate.api.nvidia.com/v1` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | 4 | https://build.nvidia.com/ |

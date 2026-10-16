@@ -20,6 +20,11 @@ MAX_COOLDOWN_SEC = 24 * 3600.0
 # HTTP statuses that mean "the endpoint is broken/out of quota for everybody" (cooldown) as opposed to
 # "this particular request is unsuitable" (400/413/422: skip to the next endpoint without a cooldown).
 COOLDOWN_STATUSES = frozenset({401, 402, 403, 404, 408, 409, 429})
+# 404 = the model was withdrawn ("no longer available"): it will not come back within the day.
+GONE_STATUSES = frozenset({404})
+# 503 = "the model is overloaded, try again later": a spike that usually passes within a minute or two.
+OVERLOAD_STATUSES = frozenset({503})
+OVERLOAD_COOLDOWN_SEC = 90.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,12 +115,18 @@ def best_retry_after(headers: Mapping[str, str] | None, text: str | None) -> flo
 def cooldown_for(status_code: int | None, retry_after: float | None, default: float) -> float | None:
     """Cooldown in seconds for a failure, or ``None`` when the endpoint should just be skipped this time.
 
-    ``status_code=None`` means timeout / connection / malformed output → cooldown. Retry-After wins when sent.
+    ``status_code=None`` means timeout / connection / malformed output → cooldown. A withdrawn model (404) is
+    cooled for :data:`MAX_COOLDOWN_SEC`; an overload (503) only briefly (:data:`OVERLOAD_COOLDOWN_SEC`).
+    Otherwise Retry-After wins when sent.
     """
+    if status_code in GONE_STATUSES:
+        return MAX_COOLDOWN_SEC
     if status_code is not None and status_code < 500 and status_code not in COOLDOWN_STATUSES:
         return None
     if retry_after is not None and retry_after > 0:
         return min(max(retry_after, 1.0), MAX_COOLDOWN_SEC)
+    if status_code in OVERLOAD_STATUSES:
+        return min(default, OVERLOAD_COOLDOWN_SEC)
     return default
 
 

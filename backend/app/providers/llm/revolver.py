@@ -7,7 +7,9 @@ or :data:`DEFAULT_ORDER`. For every lesson the endpoints are tried in order:
 * an endpoint on cooldown is skipped;
 * frames are thinned evenly to the endpoint's image cap and downscaled to ``REVOLVER_IMAGE_MAX_PX``;
   ``@0`` (or a known text-only model) gets the transcript only, and the saved analysis says so;
-* 429 / 5xx / timeout / connection error / auth error / unparseable or non-validating JSON → cooldown
+* 503 «overloaded» → the same endpoint is retried once after ``OVERLOAD_RETRY_DELAY_SEC``, then a short cooldown
+  (``OVERLOAD_COOLDOWN_SEC``); 404 «model not found / no longer available» → cooled for 24 h;
+* 429 / other 5xx / timeout / connection error / auth error / unparseable or non-validating JSON → cooldown
   (``Retry-After`` when the server sent it, else ``REVOLVER_COOLDOWN_SEC``, default 10 min) and the next one;
   400 / 413 / 422 (this request does not fit the endpoint, e.g. too many tokens) → next one without cooldown;
 * when nothing answered → :class:`FreeLimitsExhausted` («бесплатные лимиты исчерпаны, повторите позже»); the
@@ -20,6 +22,7 @@ pointed at another ``base_url``. Free tiers of several providers may use the dat
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from dataclasses import dataclass
@@ -37,6 +40,7 @@ from app.providers.llm.base import (
 )
 from app.providers.revolver import (
     LLM_COOLDOWNS,
+    OVERLOAD_STATUSES,
     CooldownBook,
     OrderEntry,
     cooldown_for,
@@ -45,6 +49,8 @@ from app.providers.revolver import (
 )
 
 log = get_logger("app.providers.llm.revolver")
+
+OVERLOAD_RETRY_DELAY_SEC = 5.0  # pause before the single retry of an overloaded (503) endpoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,8 +133,10 @@ ENDPOINTS: dict[str, Endpoint] = {
 DEFAULT_ORDER = ",".join(
     [
         "gemini:gemini-3.8-flash@16",
-        "gemini:gemini-2.5-flash@16",
+        "gemini:gemini-3.6-flash@16",
+        "gemini:gemini-3.5-flash@16",
         "gemini:gemini-3.1-flash-lite@16",
+        "gemini:gemini-3.5-flash-lite@16",
         "openrouter:google/gemma-4-31b-it:free@8",
         "openrouter:nvidia/nemotron-3.5-super-vl:free@8",
         "mistral:mistral-medium-latest@8",
@@ -189,6 +197,7 @@ class RevolverLLMProvider:
             self.max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "16000"))
         except ValueError:
             self.max_tokens = 16000
+        self.overload_retry_delay = OVERLOAD_RETRY_DELAY_SEC
         self._factory = provider_factory or self._make_provider
         self._providers: dict[str, Any] = {}
         self.slots: list[_Slot] = []
@@ -264,9 +273,7 @@ class RevolverLLMProvider:
                     "ссылайся только на переданные кадры."
                 )
             try:
-                result = await self._provider(slot).analyze(
-                    system=system, user_text=text, images=sent, json_schema=json_schema
-                )
+                result = await self._call(slot, system=system, user_text=text, images=sent, json_schema=json_schema)
             except Exception as exc:  # noqa: BLE001 - any failure of one free endpoint means "try the next one"
                 status = exc.status_code if isinstance(exc, LLMHTTPError) else None
                 retry_after = exc.retry_after if isinstance(exc, LLMHTTPError) else None
@@ -286,6 +293,17 @@ class RevolverLLMProvider:
         retry_after = self._next_available()
         log.error("llm_revolver_exhausted", failures=failures, retry_after_sec=retry_after)
         raise FreeLimitsExhausted(exhausted_message("ИИ-анализа", failures, retry_after), retry_after_sec=retry_after)
+
+    async def _call(self, slot: _Slot, **kwargs: Any) -> LLMResult:
+        """One request; an overloaded (503) endpoint gets exactly one more try before the revolver moves on."""
+        try:
+            return await self._provider(slot).analyze(**kwargs)
+        except LLMHTTPError as exc:
+            if exc.status_code not in OVERLOAD_STATUSES:
+                raise
+            log.info("llm_revolver_overloaded_retry", endpoint=slot.entry.key, delay_sec=self.overload_retry_delay)
+        await asyncio.sleep(self.overload_retry_delay)
+        return await self._provider(slot).analyze(**kwargs)
 
     def _next_available(self) -> float:
         waits = [self.cooldowns.remaining(s.entry.key) for s in self.slots]

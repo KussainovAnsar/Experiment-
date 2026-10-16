@@ -167,6 +167,7 @@ def build_user_prompt(
     parts.append(
         "# Задание\n"
         "Проанализируй урок по правилам из системной инструкции и верни один JSON-объект по схеме LessonAnalysis "
-        f'(schema_version "{PROMPT_VERSION}"). Все таймкоды — в секундах от начала записи.'
+        f'(schema_version "{PROMPT_VERSION}"). Все таймкоды — в секундах от начала записи '
+        "(метка [02:52] в транскрипте = 172 секунды, не 2.52)."
     )
     return "\n\n".join(parts)

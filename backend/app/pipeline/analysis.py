@@ -28,6 +28,7 @@ from app.pipeline.prompts import (
     build_user_prompt,
     format_timestamp,
 )
+from app.pipeline.timecodes import realign_timestamps
 from app.providers.llm.base import ImageInput, LLMError, LLMProvider, LLMResult
 from app.providers.llm.registry import get_llm_provider
 from app.schemas.analysis import STARTER_SKILL_KEYS, LessonAnalysis
@@ -253,6 +254,13 @@ async def analyze_lesson(
     except ValidationError:
         log.exception("analysis_validation_failed", provider=provider.name, model=result.model)
         raise
+    # the model's timecodes are not trusted: quotes are re-anchored to the transcript (see app.pipeline.timecodes)
+    realign_timestamps(
+        validated,
+        list(transcript.segments or []),
+        duration_sec=lesson.duration_sec or transcript.duration_sec,
+        frame_times={f.index: f.timestamp_sec for f in frames},
+    )
     latency = result.latency_ms or int((time.monotonic() - t0) * 1000)
     row = await upsert_analysis(
         session,

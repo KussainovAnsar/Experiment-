@@ -115,7 +115,11 @@ def test_retry_after_and_cooldown_policy() -> None:
     assert best_retry_after({"retry-after": "1"}, "try again in 25s") == 25.0
     assert cooldown_for(429, 30.0, 600) == 30.0
     assert cooldown_for(429, None, 600) == 600
-    assert cooldown_for(503, None, 600) == 600
+    assert cooldown_for(503, None, 600) == 90.0  # overload: short
+    assert cooldown_for(503, 30.0, 600) == 30.0
+    assert cooldown_for(500, None, 600) == 600
+    assert cooldown_for(404, None, 600) == 24 * 3600  # model withdrawn
+    assert cooldown_for(404, 5.0, 600) == 24 * 3600
     assert cooldown_for(None, None, 600) == 600  # timeout / bad JSON
     assert cooldown_for(413, None, 600) is None  # request does not fit: skip, no cooldown
 
@@ -139,7 +143,7 @@ async def test_llm_cooldown_skips_then_recovers() -> None:
     clock = Clock()
     rev, calls = revolver(
         "gemini:gemini-3.8-flash,groq:qwen/qwen3.8-27b",
-        {"gemini:gemini-3.8-flash": [LLMHTTPError("boom", status_code=503)]},
+        {"gemini:gemini-3.8-flash": [LLMHTTPError("boom", status_code=500)]},
         clock,
     )
     await run(rev)
@@ -387,3 +391,42 @@ async def test_groq_whisper_adapter_chunks_and_maps_429(tmp_path: Path, monkeypa
     assert str(seen[0].url) == GROQ_STT_URL
     assert b'name="response_format"\r\n\r\nverbose_json' in seen[1].content
     assert result.provider == "groq" and result.segments[0].text == "привет"
+
+
+async def test_llm_overload_retries_same_model_once_then_short_cooldown() -> None:
+    rev, calls = revolver(
+        "gemini:gemini-3.8-flash,groq:qwen/qwen3.8-27b",
+        {"gemini:gemini-3.8-flash": [LLMHTTPError("busy", status_code=503)]},
+    )
+    rev.overload_retry_delay = 0
+    result = await run(rev)  # second try of the same model succeeds
+    assert result.model == "gemini:gemini-3.8-flash"
+    assert [c[0] for c in calls] == ["gemini:gemini-3.8-flash", "gemini:gemini-3.8-flash"]
+    assert rev.cooldowns.remaining("gemini:gemini-3.8-flash") == 0
+
+    rev2, calls2 = revolver(
+        "gemini:gemini-3.8-flash,groq:qwen/qwen3.8-27b",
+        {"gemini:gemini-3.8-flash": [LLMHTTPError("busy", status_code=503), LLMHTTPError("busy", status_code=503)]},
+    )
+    rev2.overload_retry_delay = 0
+    result = await run(rev2)
+    assert result.model == "groq:qwen/qwen3.8-27b"
+    assert [c[0] for c in calls2] == ["gemini:gemini-3.8-flash", "gemini:gemini-3.8-flash", "groq:qwen/qwen3.8-27b"]
+    assert 0 < rev2.cooldowns.remaining("gemini:gemini-3.8-flash") <= 90
+
+
+async def test_llm_withdrawn_model_cools_for_a_day_without_retry() -> None:
+    rev, calls = revolver(
+        "gemini:gemini-2.5-flash,groq:qwen/qwen3.8-27b",
+        {"gemini:gemini-2.5-flash": [LLMHTTPError("no longer available", status_code=404)]},
+    )
+    result = await run(rev)
+    assert result.model == "groq:qwen/qwen3.8-27b"
+    assert [c[0] for c in calls] == ["gemini:gemini-2.5-flash", "groq:qwen/qwen3.8-27b"]
+    assert rev.cooldowns.remaining("gemini:gemini-2.5-flash") > 23 * 3600
+
+
+def test_default_order_has_no_withdrawn_gemini_models() -> None:
+    from app.providers.llm.revolver import DEFAULT_ORDER
+
+    assert "gemini-2.5-flash" not in DEFAULT_ORDER
