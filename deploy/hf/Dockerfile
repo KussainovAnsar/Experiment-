@@ -7,6 +7,9 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM python:3.12-slim
+# Зеркало Debian меняется аргументом: на сетях, где Fastly (deb.debian.org) режется, — --build-arg DEBIAN_MIRROR=mirror.yandex.ru
+ARG DEBIAN_MIRROR=deb.debian.org
+RUN sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources
 RUN apt-get -o Acquire::Retries=8 update && apt-get -o Acquire::Retries=8 install -y --no-install-recommends postgresql ffmpeg && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -u 1000 user && mkdir -p /data && chown user /data
 WORKDIR /app
