@@ -8,7 +8,7 @@ RUN npm run build
 
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql ffmpeg && rm -rf /var/lib/apt/lists/*
-RUN useradd -m -u 1000 user
+RUN useradd -m -u 1000 user && mkdir -p /data && chown user /data
 WORKDIR /app
 COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
